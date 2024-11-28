@@ -15,4 +15,4 @@
  (license "MIT")
  (allow_empty true)
  (version 0.1)
- (depends fmt lwt logs))
+ (depends fmt lwt logs ppx_deriving))

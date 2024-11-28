@@ -12,6 +12,7 @@ depends: [
   "fmt"
   "lwt"
   "logs"
+  "ppx_deriving"
   "odoc" {with-doc}
 ]
 build: [
