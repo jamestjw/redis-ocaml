@@ -1,4 +1,4 @@
-type command =
+type t =
   | PING
   | ECHO of string
   | GET of string
