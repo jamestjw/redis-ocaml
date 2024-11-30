@@ -1,5 +1,4 @@
 open Lwt
-open Lwt.Syntax
 open Redis
 
 let default_backlog = 5 (* max number of concurrent clients *)
@@ -7,10 +6,12 @@ let default_address = "127.0.0.1"
 let default_port = 6379
 
 let rec handle_connection ic oc context () =
-  let* cmd = Parser.get_cmd ic in
+  let%lwt cmd = Parser.get_cmd ic in
   match cmd with
   | Some cmd ->
-    let* _ = Logs_lwt.info (fun m -> m "Received command %s" @@ Cmd.show_command cmd) in
+    let%lwt _ =
+      Logs_lwt.info (fun m -> m "Received command %s" @@ Cmd.show_command cmd)
+    in
     let resp = Response.handle_message cmd context in
     Lwt_io.write oc (Response.serialize resp) >>= handle_connection ic oc context
   | None -> Logs_lwt.info (fun m -> m "Connection closed")
@@ -20,7 +21,7 @@ let accept_connection context conn =
   let fd, _ = conn in
   let ic = Lwt_io.of_fd ~mode:Lwt_io.Input fd in
   let oc = Lwt_io.of_fd ~mode:Lwt_io.Output fd in
-  let* () = Logs_lwt.info (fun m -> m "New connection") in
+  let%lwt () = Logs_lwt.info (fun m -> m "New connection") in
   Lwt.on_failure (handle_connection ic oc context ()) (fun e ->
     Logs.err (fun m -> m "%s" (Printexc.to_string e)));
   return_unit

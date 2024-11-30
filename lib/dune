@@ -2,4 +2,4 @@
  (name redis)
  (libraries fmt lwt.unix logs.lwt str)
  (preprocess
-  (pps ppx_deriving.show)))
+  (pps ppx_deriving.show lwt_ppx)))
