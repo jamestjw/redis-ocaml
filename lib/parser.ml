@@ -17,13 +17,9 @@ let args_to_cmd args =
   match lower_fst args with
   | [ "ping" ] -> Some Cmd.PING
   | [ "echo"; arg ] -> Some (Cmd.ECHO arg)
+  | [ "get"; key ] -> Some (Cmd.GET key)
+  | [ "set"; key; value ] -> Some (Cmd.SET (key, value))
   | _ -> None
-;;
-
-let handle_message cmd =
-  match cmd with
-  | Cmd.PING -> "+PONG\r\n"
-  | Cmd.ECHO s -> Printf.sprintf "$%d\r\n%s\r\n" (String.length s) s
 ;;
 
 (* Polls the input channel for a valid command, if this returns None this

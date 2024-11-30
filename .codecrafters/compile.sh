@@ -8,4 +8,4 @@
 
 set -e # Exit on failure
 
-dune build --build-dir /tmp/codecrafters-build-redis-ocaml
+dune build --profile production --build-dir /tmp/codecrafters-build-redis-ocaml
