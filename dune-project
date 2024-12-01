@@ -16,3 +16,5 @@
  (allow_empty true)
  (version 0.1)
  (depends base fmt lwt lwt_ppx logs ppx_deriving))
+
+(cram enable)
