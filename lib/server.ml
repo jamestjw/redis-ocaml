@@ -1,12 +1,22 @@
-module StringMap = Map.Make (String)
+open Base
+module StringMap = Stdlib.Map.Make (String)
 
 type t = { mailbox : (Cmd.t * Response.t Lwt_mvar.t) Lwt_mvar.t }
-type state = { store : string StringMap.t }
+type state = { store : (string * float option) StringMap.t }
 
 let mk_state () = { store = StringMap.empty }
 let mk () = { mailbox = Lwt_mvar.create_empty () }
-let get { store } key = StringMap.find_opt key store
-let set { store } key value = { store = StringMap.add key value store }
+
+let get { store } key =
+  let filter_expired (v, expiry) =
+    match expiry with
+    | Some timeout when Float.compare (Unix.time ()) timeout > 0 -> None
+    | _ -> Some v
+  in
+  StringMap.find_opt key store |> Option.bind ~f:filter_expired
+;;
+
+let set { store } key value expiry = { store = StringMap.add key (value, expiry) store }
 
 let handle_message cmd state =
   match cmd with
@@ -19,7 +29,14 @@ let handle_message cmd state =
       | Some v -> Response.BULK v
     in
     res, state
-  | Cmd.SET (k, v) -> Response.SIMPLE "OK", set state k v
+  | Cmd.SET { set_key; set_value; set_timeout } ->
+    let expiry =
+      match set_timeout with
+      | None -> None
+      | Some (PX ms) -> Some (Unix.time () +. (Float.of_int ms /. 1000.0))
+      | Some (EX secs) -> Some (Unix.time () +. Float.of_int secs)
+    in
+    Response.SIMPLE "OK", set state set_key set_value expiry
 ;;
 
 let run { mailbox } () =

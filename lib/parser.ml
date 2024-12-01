@@ -8,17 +8,41 @@ type 'a parse_result =
   | InvalidFormat of string
   | Parsed of 'a
 
+let lower_fst = function
+  | [] -> []
+  | x :: xs -> String.lowercase_ascii x :: xs
+;;
+
+let parse_set_cmd = function
+  | set_key :: set_value :: args ->
+    let rec helper args (set_key, set_value, set_timeout) =
+      match lower_fst args with
+      | [] -> Ok (Cmd.SET { set_key; set_value; set_timeout })
+      | "px" :: timeout :: rest ->
+        (match int_of_string_opt timeout, set_timeout with
+         | _, Some _ -> Error "timeout set twice for set command"
+         | Some timeout, None when timeout > 0 ->
+           helper rest (set_key, set_value, Some (Cmd.PX timeout))
+         | _ -> Error "require positive integer for timeout")
+      | "ex" :: timeout :: rest ->
+        (match int_of_string_opt timeout, set_timeout with
+         | _, Some _ -> Error "timeout set twice for set command"
+         | Some timeout, None when timeout > 0 ->
+           helper rest (set_key, set_value, Some (Cmd.EX timeout))
+         | _ -> Error "require positive integer for timeout")
+      | _ -> Error "malformed arguments for set"
+    in
+    helper args (set_key, set_value, None)
+  | _ -> Error "invalid args for set, key-value pair required"
+;;
+
 let args_to_cmd args =
-  let lower_fst = function
-    | [] -> []
-    | x :: xs -> String.lowercase_ascii x :: xs
-  in
   match lower_fst args with
-  | [ "ping" ] -> Some Cmd.PING
-  | [ "echo"; arg ] -> Some (Cmd.ECHO arg)
-  | [ "get"; key ] -> Some (Cmd.GET key)
-  | [ "set"; key; value ] -> Some (Cmd.SET (key, value))
-  | _ -> None
+  | [ "ping" ] -> Ok Cmd.PING
+  | [ "echo"; arg ] -> Ok (Cmd.ECHO arg)
+  | [ "get"; key ] -> Ok (Cmd.GET key)
+  | "set" :: args -> parse_set_cmd args
+  | _ -> Error "unrecognised command format"
 ;;
 
 (* Polls the input channel for a valid command, if this returns None this
@@ -71,10 +95,11 @@ let rec get_cmd ic =
      | InvalidFormat _ -> get_cmd ic
      | Parsed arg_list ->
        (match args_to_cmd arg_list with
-        | None ->
+        | Error e ->
           let%lwt _ =
-            Logs_lwt.err (fun m -> m "Unknown command %s" @@ String.concat "  " arg_list)
+            Logs_lwt.err (fun m ->
+              m "Unexpected error, %s: %s" e (String.concat "  " arg_list))
           in
           return None
-        | Some cmd -> return @@ Some cmd))
+        | Ok cmd -> return @@ Some cmd))
 ;;
