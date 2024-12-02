@@ -1,9 +1,12 @@
 open Lwt
 open Redis
+open Core
 
 let default_backlog = 5 (* max number of concurrent clients *)
 let default_address = "127.0.0.1"
 let default_port = 6379
+let default_rdb_dir = "/tmp/redis-data"
+let default_rdb_filename = "rdbfile"
 
 let rec handle_connection ic oc server () =
   let%lwt cmd = Parser.get_cmd ic in
@@ -21,7 +24,7 @@ let accept_connection server conn =
   let oc = Lwt_io.of_fd ~mode:Lwt_io.Output fd in
   let%lwt () = Logs_lwt.info (fun m -> m "New connection") in
   Lwt.on_failure (handle_connection ic oc server ()) (fun e ->
-    Logs.err (fun m -> m "%s" (Printexc.to_string e)));
+    Logs.err (fun m -> m "%s" (Exn.to_string e)));
   return_unit
 ;;
 
@@ -30,31 +33,48 @@ let create_server_socket ~address ~port ~backlog =
   (* Create a TCP server socket *)
   let sock = socket PF_INET SOCK_STREAM 0 in
   setsockopt sock SO_REUSEADDR true;
-  Lwt.async (fun _ -> bind sock (ADDR_INET (Unix.inet_addr_of_string address, port)));
+  Lwt.async (fun _ -> bind sock (ADDR_INET (Core_unix.Inet_addr.of_string address, port)));
   listen sock backlog;
   sock
 ;;
 
-let create_server sock =
+let create_server ~sock ~rdb_dir ~rdb_filename =
   let server = Server.mk () in
   let rec loop () = Lwt_unix.accept sock >>= accept_connection server >>= loop in
   let start () =
-    Lwt.on_failure (Server.run server ()) (fun e ->
-      Logs.err (fun m -> m "%s" (Printexc.to_string e)));
+    Lwt.on_failure (Server.run server ~rdb_dir ~rdb_filename) (fun e ->
+      Logs.err (fun m -> m "%s" (Exn.to_string e)));
     loop ()
   in
   start
 ;;
 
+let command =
+  Command.basic
+    ~summary:"Implementation of a Redis server in OCaml."
+    (let%map_open.Command rdb_dir =
+       flag
+         "--dir"
+         (optional string)
+         ~doc:"path the path where the RDB file should be stored"
+     and rdb_file_name =
+       flag "--dbfilename" (optional string) ~doc:"filename the name of the RDB file"
+     in
+     let rdb_dir = Option.value rdb_dir ~default:default_rdb_dir in
+     let rdb_filename = Option.value rdb_file_name ~default:default_rdb_filename in
+     fun () ->
+       let server_socket =
+         create_server_socket
+           ~address:default_address
+           ~port:default_port
+           ~backlog:default_backlog
+       in
+       let serve = create_server ~sock:server_socket ~rdb_dir ~rdb_filename in
+       Lwt_main.run @@ serve ())
+;;
+
 let () =
   let () = Logs.set_reporter (Logs.format_reporter ()) in
   let () = Logs.set_level (Some Logs.Info) in
-  let server_socket =
-    create_server_socket
-      ~address:default_address
-      ~port:default_port
-      ~backlog:default_backlog
-  in
-  let serve = create_server server_socket in
-  Lwt_main.run @@ serve ()
+  Command_unix.run command
 ;;

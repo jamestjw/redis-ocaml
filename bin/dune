@@ -1,6 +1,6 @@
 (executable
  (public_name redis_ocaml_server)
  (name main)
- (libraries fmt lwt.unix logs.lwt str redis)
+ (libraries fmt lwt.unix logs.lwt str redis core_unix.command_unix)
  (preprocess
-  (pps ppx_deriving.show lwt_ppx)))
+  (pps ppx_jane ppx_deriving.show lwt_ppx)))

@@ -10,6 +10,7 @@ bug-reports: "https://github.com/codecrafters-io/build-your-own-redis/issues"
 depends: [
   "dune" {>= "3.16"}
   "base"
+  "core_unix"
   "fmt"
   "lwt"
   "lwt_ppx"
