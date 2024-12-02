@@ -37,6 +37,7 @@ let handle_message cmd state =
       | Some (EX secs) -> Some (Unix.time () +. Float.of_int secs)
     in
     Response.SIMPLE "OK", set state set_key set_value expiry
+  | Cmd.INVALID s -> Response.ERR s, state
 ;;
 
 let run { mailbox } () =

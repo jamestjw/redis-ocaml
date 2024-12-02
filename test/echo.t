@@ -13,3 +13,8 @@ Testing ECHO numbers:
 Testing ECHO quoted:
   $ redis-cli ECHO "hello world"
   hello world
+
+Testing ECHO wrong args:
+  $ redis-cli ECHO arg1 arg2
+  ERR 'ECHO' takes one arg
+  

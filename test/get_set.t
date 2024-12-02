@@ -29,3 +29,32 @@ SETting with timeout (seconds):
   $ sleep 2
   $ redis-cli GET message
   
+
+GET too many args:
+  $ redis-cli GET key value
+  ERR 'GET' takes one arg
+  
+
+SET unknown args:
+  $ redis-cli SET key value pxx 5
+  ERR unknown arg 'pxx' for 'SET'
+  
+
+SET set timeout twice with different args:
+  $ redis-cli SET key value px 1000 ex 1
+  ERR timeout set twice for 'SET' command
+  
+SET set timeout twice with same args:
+  $ redis-cli SET key value px 1000 px 1
+  ERR timeout set twice for 'SET' command
+  
+
+SET set timeout with zero:
+  $ redis-cli SET key value px 0
+  ERR 'SET' requires positive integer for timeout
+  
+
+SET set timeout with negative value:
+  $ redis-cli SET key value px -1000
+  ERR 'SET' requires positive integer for timeout
+  

@@ -12,4 +12,5 @@ type t =
       ; set_value : string
       ; set_timeout : set_timeout option
       }
+  | INVALID of string
 [@@deriving show { with_path = false }]

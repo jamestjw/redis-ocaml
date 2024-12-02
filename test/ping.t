@@ -26,3 +26,8 @@ Testing PING concurrent:
   PONG
   PONG
   PONG
+
+Testing PING too many args:
+  $ redis-cli PING 123
+  ERR 'PING' takes no args
+  

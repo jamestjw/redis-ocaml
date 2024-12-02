@@ -17,32 +17,48 @@ let parse_set_cmd = function
   | set_key :: set_value :: args ->
     let rec helper args (set_key, set_value, set_timeout) =
       match lower_fst args with
-      | [] -> Ok (Cmd.SET { set_key; set_value; set_timeout })
+      | [] -> Cmd.SET { set_key; set_value; set_timeout }
       | "px" :: timeout :: rest ->
         (match int_of_string_opt timeout, set_timeout with
-         | _, Some _ -> Error "timeout set twice for set command"
+         | _, Some _ -> Cmd.INVALID "timeout set twice for 'SET' command"
          | Some timeout, None when timeout > 0 ->
            helper rest (set_key, set_value, Some (Cmd.PX timeout))
-         | _ -> Error "require positive integer for timeout")
+         | _ -> Cmd.INVALID "'SET' requires positive integer for timeout")
       | "ex" :: timeout :: rest ->
         (match int_of_string_opt timeout, set_timeout with
-         | _, Some _ -> Error "timeout set twice for set command"
+         | _, Some _ -> Cmd.INVALID "timeout set twice for 'SET' command"
          | Some timeout, None when timeout > 0 ->
            helper rest (set_key, set_value, Some (Cmd.EX timeout))
-         | _ -> Error "require positive integer for timeout")
-      | _ -> Error "malformed arguments for set"
+         | _ -> Cmd.INVALID "'SET' requires positive integer for timeout")
+      | arg :: _ -> Cmd.INVALID (Printf.sprintf "unknown arg '%s' for 'SET'" arg)
     in
     helper args (set_key, set_value, None)
-  | _ -> Error "invalid args for set, key-value pair required"
+  | _ -> Cmd.INVALID "invalid args for set, key-value pair required"
+;;
+
+let parse_ping_cmd = function
+  | [] -> Cmd.PING
+  | _ -> Cmd.INVALID "'PING' takes no args"
+;;
+
+let parse_echo_cmd = function
+  | [ e ] -> Cmd.ECHO e
+  | _ -> Cmd.INVALID "'ECHO' takes one arg"
+;;
+
+let parse_get_cmd = function
+  | [ key ] -> Cmd.GET key
+  | _ -> Cmd.INVALID "'GET' takes one arg"
 ;;
 
 let args_to_cmd args =
   match lower_fst args with
-  | [ "ping" ] -> Ok Cmd.PING
-  | [ "echo"; arg ] -> Ok (Cmd.ECHO arg)
-  | [ "get"; key ] -> Ok (Cmd.GET key)
+  | "ping" :: args -> parse_ping_cmd args
+  | "echo" :: args -> parse_echo_cmd args
+  | "get" :: args -> parse_get_cmd args
   | "set" :: args -> parse_set_cmd args
-  | _ -> Error "unrecognised command format"
+  | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
+  | _ -> Cmd.INVALID "invalid command"
 ;;
 
 (* Polls the input channel for a valid command, if this returns None this
@@ -92,14 +108,6 @@ let rec get_cmd ic =
     let%lwt arg_list = parse_args num_args in
     (match arg_list with
      | Disconnected -> return None
-     | InvalidFormat _ -> get_cmd ic
-     | Parsed arg_list ->
-       (match args_to_cmd arg_list with
-        | Error e ->
-          let%lwt _ =
-            Logs_lwt.err (fun m ->
-              m "Unexpected error, %s: %s" e (String.concat "  " arg_list))
-          in
-          return None
-        | Ok cmd -> return @@ Some cmd))
+     | InvalidFormat s -> return @@ Some (Cmd.INVALID s)
+     | Parsed arg_list -> return @@ Some (args_to_cmd arg_list))
 ;;
