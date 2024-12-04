@@ -1,5 +1,6 @@
 open Core
 open Lwt
+module StringMap = Stdlib.Map.Make (String)
 
 let num_args_regex = Str.regexp {|\*\([0-9]+\)|}
 let arg_len_regex = Str.regexp {|\$\([0-9]+\)|}
@@ -121,33 +122,36 @@ let rec get_cmd ic =
      | Parsed arg_list -> return @@ Some (args_to_cmd arg_list))
 ;;
 
-let hex_str_to_int_opt s = Stdlib.int_of_string_opt (Printf.sprintf "0x%s" s)
-
-let ascii_hex_to_str l =
-  let opts = List.map ~f:hex_str_to_int_opt l in
-  if List.exists ~f:Option.is_none opts
-  then None
-  else (
-    let str =
-      List.filter_opt opts
-      |> List.map ~f:(fun e -> Stdlib.Option.get (Char.of_int e))
-      |> String.of_list
-    in
-    Some str)
-;;
-
-(* RDB file *)
+(* RDB file, parsed based on the specs in https://rdb.fnordig.de/file_format.html *)
 
 type header = { rdb_version : int }
+type metadata = string StringMap.t
+type checksum = string
+
+let hex_str_to_int_opt s = Stdlib.int_of_string_opt (Printf.sprintf "0x%s" s)
+let ascii_hex_to_str l = List.map ~f:(fun e -> Char.of_int_exn e) l |> String.of_list
+
+let parse_length (bytes : int list) =
+  match bytes with
+  | [] -> Error "malformed length prefix"
+  (* First 2 bits of the byte are 00 *)
+  | b :: rest when Int.(b land 0b11000000) = 0 -> Ok (b, rest)
+  (* First 2 bits of the first byte are 01 *)
+  | b1 :: b2 :: rest when Int.(b1 land 0b11000000) = 0b01000000 ->
+    (* Take the last 6 bits of the first byte, join them to the next byte *)
+    Ok (Int.shift_left Int.(b1 land 0b111111) 8 + b2, rest)
+  (* First 2 bits of the first byte are 10, the next 4 bytes are the length *)
+  | b1 :: b2 :: b3 :: b4 :: b5 :: rest when Int.(b1 land 0b11000000) = 0b10000000 ->
+    Ok (Int.((b2 lsl 24) + (b3 lsl 16) + (b4 lsl 8) + b5), rest)
+  | _ -> Error "invalid prefix length format"
+;;
 
 let parse_length_prefixed_string data =
-  match data with
-  | [] -> Error "malformed length prefixed string"
-  | len_str :: rest ->
-    (match hex_str_to_int_opt len_str with
-     | None -> Error "invalid byte"
-     | Some len when List.length rest <> len -> Error "bytes do not match prefix length"
-     | Some _ -> Result.of_option ~error:"invalid byte in string" (ascii_hex_to_str rest))
+  let open Result.Let_syntax in
+  let%bind len, rest = parse_length data in
+  if len <> List.length rest
+  then Error "bytes do not match prefix length"
+  else Ok (ascii_hex_to_str rest)
 ;;
 
 let parse_header lines =
@@ -155,14 +159,8 @@ let parse_header lines =
   match lines with
   | [] -> Error "missing header"
   | line :: rest ->
-    let%bind magic =
-      Result.of_option ~error:"malformed magic" (List.slice line 0 5 |> ascii_hex_to_str)
-    in
-    let%bind version_num_str =
-      Result.of_option
-        ~error:"malformed version number"
-        (List.slice line 5 9 |> ascii_hex_to_str)
-    in
+    let magic = List.slice line 0 5 |> ascii_hex_to_str in
+    let version_num_str = List.slice line 5 9 |> ascii_hex_to_str in
     let%bind version_num =
       Result.of_option
         ~error:"invalid version number"
@@ -171,6 +169,42 @@ let parse_header lines =
     (match magic with
      | "REDIS" -> Ok ({ rdb_version = version_num }, rest)
      | _ -> Error "invalid magic string")
+;;
+
+let line_is_op_code = function
+  | [ 0xFA ] | [ 0xFB ] | [ 0xFC ] | [ 0xFD ] | [ 0xFE ] | [ 0xFF ] -> true
+  | _ -> false
+;;
+
+(* Also known as auxiliary fields in the spec *)
+let parse_metadata lines =
+  let open Result.Let_syntax in
+  let rec parse_kvs kv_pairs map =
+    match kv_pairs with
+    | fst :: rest when line_is_op_code fst -> Ok (map, rest)
+    | key :: value :: rest ->
+      (* TODO: we need to support other string formats too, i.e. integer strings
+         and compressed LZF strings *)
+      let%bind key = parse_length_prefixed_string key in
+      let%bind value = parse_length_prefixed_string value in
+      parse_kvs rest (StringMap.add key value map)
+    | _ -> Error "missing key or value in FA section"
+  in
+  match lines with
+  | [ 0xFA ] :: kv_pairs -> parse_kvs kv_pairs StringMap.empty
+  | [] -> Error "missing metadata section"
+  | _ -> Error (Printf.sprintf "badly formatted FA section")
+;;
+
+let ints_to_hex_str ints =
+  List.map ~f:(fun i -> Printf.sprintf "%X" i) ints |> String.concat
+;;
+
+let parse_eof lines =
+  match lines with
+  | [] -> Error "missing end of file section"
+  | [ 0xFF ] :: checksum_line :: rest -> Ok (ints_to_hex_str checksum_line, rest)
+  | _ -> Error "malformed end of file section"
 ;;
 
 let parse_rdb str = failwith "todo"
