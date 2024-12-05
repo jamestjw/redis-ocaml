@@ -127,6 +127,13 @@ let rec get_cmd ic =
 type header = { rdb_version : int }
 type metadata = string StringMap.t
 
+type str_encoding =
+  | LP_STR of string
+  | INTEGER of int
+  (* bytes and uncompressed_len *)
+  | COMPRESSED_STR of int list * int
+(* TODO: implement rest *)
+
 let hex_str_to_int_opt s = Stdlib.int_of_string_opt (Printf.sprintf "0x%s" s)
 let ascii_hex_to_str l = List.map ~f:(fun e -> Char.of_int_exn e) l |> String.of_list
 
@@ -159,6 +166,53 @@ let parse_length_prefixed_string bytes =
       (list_split_n_opt bytes len)
   in
   return (ascii_hex_to_str str_bytes, rest)
+;;
+
+let little_endian_to_int l =
+  List.mapi ~f:(fun i v -> Int.(v lsl (8 * i))) l |> List.fold ~f:( + ) ~init:0
+;;
+
+let is_special_format bytes =
+  match bytes with
+  | byte :: _ when Int.(byte land 0b11000000) = 0b11000000 -> true
+  | _ -> false
+;;
+
+let parse_special_format bytes =
+  let open Result.Let_syntax in
+  match bytes with
+  (* Integers as String
+     Read 1st byte, check if the first two bits are 11, then the remaining 6
+     bits are read.
+
+     If the value of those 6 bits is:
+     - 0: indicates that an 8 bit integer follows
+     - 1: indicates that a 16 bit integer follows
+     - 2: indicates that a 32 bit integer follows *)
+  | byte :: rest when Int.(byte land 0b11000000) = 0b11000000 ->
+    (match Int.(byte land 0b111111), rest with
+     | 0, b1 :: rest -> Ok (INTEGER b1, rest)
+     | 1, b1 :: b2 :: rest -> Ok (INTEGER (little_endian_to_int [ b1; b2 ]), rest)
+     | 2, b1 :: b2 :: b3 :: b4 :: rest ->
+       Ok (INTEGER (little_endian_to_int [ b1; b2; b3; b4 ]), rest)
+     | 3, _ ->
+       let%bind compressed_len, bytes = parse_length bytes in
+       let%bind uncompressed_len, bytes = parse_length bytes in
+       let%bind str_bytes, rest =
+         Result.of_option
+           ~error:"insufficient bytes in compressed string"
+           (list_split_n_opt bytes compressed_len)
+       in
+       Ok (COMPRESSED_STR (str_bytes, uncompressed_len), rest)
+     | _ -> Error "invalid special format")
+  | _ -> Error "not special format??"
+;;
+
+let parse_string_encoding bytes =
+  let open Result.Let_syntax in
+  if is_special_format bytes
+  then parse_special_format bytes
+  else parse_length_prefixed_string bytes >>| fun (str, bytes) -> LP_STR str, bytes
 ;;
 
 let parse_header bytes =
@@ -196,7 +250,7 @@ let parse_metadata bytes =
       (* TODO: we need to support other string formats too, i.e. integer strings
          and compressed LZF strings *)
       let%bind key, bytes = parse_length_prefixed_string bytes in
-      let%bind value, bytes = parse_length_prefixed_string bytes in
+      let%bind value, bytes = parse_string_encoding bytes in
       parse_kvs bytes (StringMap.add key value map)
     | rest -> Ok (map, rest)
   in
