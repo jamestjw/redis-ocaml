@@ -126,7 +126,6 @@ let rec get_cmd ic =
 
 type header = { rdb_version : int }
 type metadata = string StringMap.t
-type checksum = string
 
 let hex_str_to_int_opt s = Stdlib.int_of_string_opt (Printf.sprintf "0x%s" s)
 let ascii_hex_to_str l = List.map ~f:(fun e -> Char.of_int_exn e) l |> String.of_list
@@ -146,54 +145,62 @@ let parse_length (bytes : int list) =
   | _ -> Error "invalid prefix length format"
 ;;
 
-let parse_length_prefixed_string data =
-  let open Result.Let_syntax in
-  let%bind len, rest = parse_length data in
-  if len <> List.length rest
-  then Error "bytes do not match prefix length"
-  else Ok (ascii_hex_to_str rest)
+let list_split_n_opt l n =
+  let left, right = List.split_n l n in
+  if List.length left <> n then None else Some (left, right)
 ;;
 
-let parse_header lines =
+let parse_length_prefixed_string bytes =
   let open Result.Let_syntax in
-  match lines with
-  | [] -> Error "missing header"
-  | line :: rest ->
-    let magic = List.slice line 0 5 |> ascii_hex_to_str in
-    let version_num_str = List.slice line 5 9 |> ascii_hex_to_str in
+  let%bind len, bytes = parse_length bytes in
+  let%bind str_bytes, rest =
+    Result.of_option
+      ~error:"insufficient bytes in prefixed length string"
+      (list_split_n_opt bytes len)
+  in
+  return (ascii_hex_to_str str_bytes, rest)
+;;
+
+let parse_header bytes =
+  let open Result.Let_syntax in
+  (* 52 45 44 49 53 30 30 31 31  // Magic string + version number (ASCII): "REDIS0011". *)
+  let header_bytes, rest = List.split_n bytes 9 in
+  if List.length header_bytes <> 9
+  then Error "missing bytes in header"
+  else (
+    let magic_bytes, version_number_bytes = List.split_n header_bytes 5 in
+    (* FIXME: Type system doesn't guarantee that this will always work *)
+    let magic = ascii_hex_to_str magic_bytes in
+    let version_number_str = ascii_hex_to_str version_number_bytes in
     let%bind version_num =
       Result.of_option
         ~error:"invalid version number"
-        (Stdlib.int_of_string_opt version_num_str)
+        (Stdlib.int_of_string_opt version_number_str)
     in
-    (match magic with
-     | "REDIS" -> Ok ({ rdb_version = version_num }, rest)
-     | _ -> Error "invalid magic string")
+    match magic with
+    | "REDIS" -> Ok ({ rdb_version = version_num }, rest)
+    | _ -> Error "invalid magic string")
 ;;
 
-let line_is_op_code = function
-  | [ 0xFA ] | [ 0xFB ] | [ 0xFC ] | [ 0xFD ] | [ 0xFE ] | [ 0xFF ] -> true
+let byte_is_op_code = function
+  | 0xFA | 0xFB | 0xFC | 0xFD | 0xFE | 0xFF -> true
   | _ -> false
 ;;
 
 (* Also known as auxiliary fields in the spec *)
-let parse_metadata lines =
+let parse_metadata bytes =
   let open Result.Let_syntax in
-  let rec parse_kvs kv_pairs map =
-    match kv_pairs with
-    | fst :: rest when line_is_op_code fst -> Ok (map, rest)
-    | key :: value :: rest ->
+  let rec parse_kvs bytes map =
+    match bytes with
+    | 0xFA :: bytes ->
       (* TODO: we need to support other string formats too, i.e. integer strings
          and compressed LZF strings *)
-      let%bind key = parse_length_prefixed_string key in
-      let%bind value = parse_length_prefixed_string value in
-      parse_kvs rest (StringMap.add key value map)
-    | _ -> Error "missing key or value in FA section"
+      let%bind key, bytes = parse_length_prefixed_string bytes in
+      let%bind value, bytes = parse_length_prefixed_string bytes in
+      parse_kvs bytes (StringMap.add key value map)
+    | rest -> Ok (map, rest)
   in
-  match lines with
-  | [ 0xFA ] :: kv_pairs -> parse_kvs kv_pairs StringMap.empty
-  | [] -> Error "missing metadata section"
-  | _ -> Error (Printf.sprintf "badly formatted FA section")
+  parse_kvs bytes StringMap.empty
 ;;
 
 let ints_to_hex_str ints =
@@ -201,10 +208,14 @@ let ints_to_hex_str ints =
 ;;
 
 let parse_eof lines =
+  let open Result.Let_syntax in
   match lines with
-  | [] -> Error "missing end of file section"
-  | [ 0xFF ] :: checksum_line :: rest -> Ok (ints_to_hex_str checksum_line, rest)
-  | _ -> Error "malformed end of file section"
+  | 0xFF :: bytes ->
+    let%bind checksum_bytes, rest =
+      Result.of_option ~error:"insufficient checksum bytes" (list_split_n_opt bytes 8)
+    in
+    Ok (ints_to_hex_str checksum_bytes, rest)
+  | _ -> Error "malformed/missing end of file section"
 ;;
 
 let parse_rdb str = failwith "todo"
