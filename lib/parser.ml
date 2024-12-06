@@ -133,7 +133,7 @@ and str_encoding =
   | COMPRESSED_STR of int list * int
 
 (* TODO: implement rest *)
-and metadata = str_encoding StringMap.t [@opaque]
+and metadata = (str_encoding StringMap.t[@opaque])
 
 and expire_timestamp =
   | SECS of int
@@ -159,6 +159,12 @@ and rdb =
   ; checksum : string
   }
 [@@deriving show { with_path = false }]
+
+let str_encoding_to_str = function
+  | LP_STR s -> s
+  | INTEGER i -> string_of_int i
+  | _ -> failwith "not implemented yet"
+;;
 
 let hex_str_to_int_opt s = Stdlib.int_of_string_opt (Printf.sprintf "0x%s" s)
 let ascii_hex_to_str l = List.map ~f:(fun e -> Char.of_int_exn e) l |> String.of_list
