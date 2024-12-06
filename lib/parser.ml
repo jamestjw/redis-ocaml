@@ -125,14 +125,40 @@ let rec get_cmd ic =
 (* RDB file, parsed based on the specs in https://rdb.fnordig.de/file_format.html *)
 
 type header = { rdb_version : int }
-type metadata = string StringMap.t
 
-type str_encoding =
+and str_encoding =
   | LP_STR of string
   | INTEGER of int
   (* bytes and uncompressed_len *)
   | COMPRESSED_STR of int list * int
+
 (* TODO: implement rest *)
+and metadata = str_encoding StringMap.t [@opaque]
+
+and expire_timestamp =
+  | SECS of int
+  | MILLISECS of int
+
+and kv_pair =
+  { key : str_encoding
+  ; value : str_encoding
+  ; expire_timestamp : expire_timestamp option
+  }
+
+and database =
+  { db_index : int
+  ; hash_tbl_sz : int
+  ; expire_hash_tbl_sz : int
+  ; kv_pairs : kv_pair list
+  }
+
+and rdb =
+  { header : header
+  ; metadata : metadata
+  ; databases : database list
+  ; checksum : string
+  }
+[@@deriving show { with_path = false }]
 
 let hex_str_to_int_opt s = Stdlib.int_of_string_opt (Printf.sprintf "0x%s" s)
 let ascii_hex_to_str l = List.map ~f:(fun e -> Char.of_int_exn e) l |> String.of_list
@@ -261,9 +287,60 @@ let ints_to_hex_str ints =
   List.map ~f:(fun i -> Printf.sprintf "%X" i) ints |> String.concat
 ;;
 
-let parse_eof lines =
+let parse_one bytes expected err =
+  match bytes with
+  | byte :: bytes when byte = expected -> Ok (byte, bytes)
+  | _ -> Error err
+;;
+
+let parse_databases bytes =
   let open Result.Let_syntax in
-  match lines with
+  let rec parse_kvs bytes acc =
+    match bytes with
+    | 0xFC :: bytes ->
+      let%bind timestamp_bytes, bytes =
+        Result.of_option ~error:"missing bytes for timestamp" (list_split_n_opt bytes 8)
+      in
+      parse_kv (Some (MILLISECS (little_endian_to_int timestamp_bytes))) bytes acc
+    | 0xFD :: bytes ->
+      let%bind timestamp_bytes, bytes =
+        Result.of_option ~error:"missing bytes for timestamp" (list_split_n_opt bytes 4)
+      in
+      parse_kv (Some (SECS (little_endian_to_int timestamp_bytes))) bytes acc
+    | b :: _ when byte_is_op_code b ->
+      (* We are probably in the EOF section *)
+      return (List.rev acc, bytes)
+    | bytes ->
+      (* No expiry here, just move on *)
+      parse_kv None bytes acc
+  and parse_kv expire_timestamp bytes acc =
+    match bytes with
+    | 0 :: bytes ->
+      (* dealing with a string *)
+      let%bind key, bytes = parse_string_encoding bytes in
+      let%bind value, bytes = parse_string_encoding bytes in
+      parse_kvs bytes ({ key; value; expire_timestamp } :: acc)
+    | t :: _ -> Fmt.failwith "can't handle type %d" t
+    | _ -> Error "missing kv pair in database section"
+  in
+  let rec parse_database' bytes acc =
+    match bytes with
+    | 0xFE :: bytes ->
+      let%bind db_index, bytes = parse_length bytes in
+      let%bind _, bytes = parse_one bytes 0xFB "expected 0xFB in database section" in
+      let%bind hash_tbl_sz, bytes = parse_length bytes in
+      let%bind expire_hash_tbl_sz, bytes = parse_length bytes in
+      let%bind kv_pairs, bytes = parse_kvs bytes [] in
+      let database = { db_index; hash_tbl_sz; expire_hash_tbl_sz; kv_pairs } in
+      parse_database' bytes (database :: acc)
+    | _ -> Ok (acc, bytes)
+  in
+  parse_database' bytes []
+;;
+
+let parse_eof bytes =
+  let open Result.Let_syntax in
+  match bytes with
   | 0xFF :: bytes ->
     let%bind checksum_bytes, rest =
       Result.of_option ~error:"insufficient checksum bytes" (list_split_n_opt bytes 8)
@@ -272,4 +349,13 @@ let parse_eof lines =
   | _ -> Error "malformed/missing end of file section"
 ;;
 
-let parse_rdb str = failwith "todo"
+let parse_rdb bytes =
+  let open Result.Let_syntax in
+  let%bind header, bytes = parse_header bytes in
+  let%bind metadata, bytes = parse_metadata bytes in
+  let%bind databases, bytes = parse_databases bytes in
+  let%bind checksum, bytes = parse_eof bytes in
+  match bytes with
+  | [] -> Ok { header; metadata; databases; checksum }
+  | _ -> Error "unexpected  trailing bytes"
+;;
