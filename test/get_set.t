@@ -1,6 +1,6 @@
 Start redis:
-  $ nohup redis_ocaml_server > /dev/null 2>&1 &
-  $ sleep 0.5
+  $ flock /tmp/redis-test.lock ./run_redis.sh
+  
 
 GET without setting:
   $ redis-cli GET token
@@ -58,3 +58,6 @@ SET set timeout with negative value:
   $ redis-cli SET key value px -1000
   ERR 'SET' requires positive integer for timeout
   
+
+Kill redis:
+  $ ./kill_redis.sh

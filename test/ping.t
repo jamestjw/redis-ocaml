@@ -1,6 +1,6 @@
 Start redis:
-  $ nohup redis_ocaml_server > /dev/null 2>&1 &
-  $ sleep 0.5
+  $ flock /tmp/redis-test.lock ./run_redis.sh
+  
 
 Testing PING lowercase:
   $ redis-cli ping
@@ -31,3 +31,5 @@ Testing PING too many args:
   $ redis-cli PING 123
   ERR 'PING' takes no args
   
+Kill redis:
+  $ ./kill_redis.sh

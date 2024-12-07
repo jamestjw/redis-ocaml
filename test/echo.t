@@ -1,6 +1,6 @@
 Start redis:
-  $ nohup redis_ocaml_server > /dev/null 2>&1 &
-  $ sleep 0.5
+  $ flock /tmp/redis-test.lock ./run_redis.sh
+  
 
 Testing ECHO simple:
   $ redis-cli ECHO test
@@ -18,3 +18,5 @@ Testing ECHO wrong args:
   $ redis-cli ECHO arg1 arg2
   ERR 'ECHO' takes one arg
   
+Kill redis:
+  $ ./kill_redis.sh

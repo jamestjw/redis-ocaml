@@ -1,2 +1,2 @@
 (cram
- (deps %{bin:redis_ocaml_server}))
+ (deps run_redis.sh kill_redis.sh %{bin:redis_ocaml_server}))
