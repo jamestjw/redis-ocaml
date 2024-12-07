@@ -57,17 +57,21 @@ let mk_state ~rdb_dir ~rdb_filename =
 
 let mk () = { mailbox = Lwt_mvar.create_empty () }
 
-let get { store; _ } key =
-  let filter_expired (v, expiry) =
-    match expiry with
-    | Some timeout when Float.compare (Core_unix.time ()) timeout > 0 -> None
-    | _ -> Some v
-  in
-  StringMap.find_opt key store |> Option.bind ~f:filter_expired
+let filter_expired (v, expiry) =
+  match expiry with
+  | Some timeout when Float.compare (Core_unix.time ()) timeout > 0 -> None
+  | _ -> Some v
 ;;
+
+let get { store; _ } key = StringMap.find_opt key store |> Option.bind ~f:filter_expired
 
 let set ({ store; _ } as state) key value expiry =
   { state with store = StringMap.add key (value, expiry) store }
+;;
+
+let get_keys { store; _ } =
+  StringMap.to_list store
+  |> List.filter_map ~f:(fun (k, (_, expiry)) -> filter_expired (k, expiry))
 ;;
 
 let get_config { configs; _ } key = StringMap.find_opt key configs
@@ -99,6 +103,13 @@ let handle_message cmd state =
       |> List.map ~f:(fun e -> Response.BULK e)
     in
     Response.ARRAY res, state
+  | Cmd.KEYS query ->
+    let matcher = Glob.glob_to_matcher query in
+    let keys =
+      get_keys state
+      |> List.filter_map ~f:(fun e -> if matcher e then Some (Response.BULK e) else None)
+    in
+    Response.ARRAY keys, state
   | Cmd.INVALID s -> Response.ERR s, state
 ;;
 
