@@ -1,6 +1,6 @@
 Start redis:
-  $ nohup redis_ocaml_server > /dev/null 2>&1 &
-  $ sleep 0.5
+  $ flock /tmp/redis-test.lock ./run_redis.sh
+  
 
 Testing CONFIG GET dir:
   $ redis-cli CONFIG GET dir
@@ -27,3 +27,5 @@ Testing CONFIG GET no keys:
   $ redis-cli CONFIG GET
   ERR wrong number of arguments for 'config|get' command
   
+Kill redis:
+  $ ./kill_redis.sh
