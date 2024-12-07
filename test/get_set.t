@@ -1,6 +1,5 @@
 Start redis:
   $ flock /tmp/redis-test.lock ./run_redis.sh
-  
 
 GET without setting:
   $ redis-cli GET token

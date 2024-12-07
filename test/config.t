@@ -1,6 +1,5 @@
 Start redis:
   $ flock /tmp/redis-test.lock ./run_redis.sh
-  
 
 Testing CONFIG GET dir:
   $ redis-cli CONFIG GET dir

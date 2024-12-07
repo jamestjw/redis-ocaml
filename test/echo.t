@@ -1,6 +1,5 @@
 Start redis:
   $ flock /tmp/redis-test.lock ./run_redis.sh
-  
 
 Testing ECHO simple:
   $ redis-cli ECHO test

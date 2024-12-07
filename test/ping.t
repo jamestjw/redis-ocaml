@@ -1,6 +1,5 @@
 Start redis:
   $ flock /tmp/redis-test.lock ./run_redis.sh
-  
 
 Testing PING lowercase:
   $ redis-cli ping
@@ -15,7 +14,7 @@ Testing PING mixed-case:
   PONG
 
 Testing PING multiple:
-  $ echo -e "PING\nPING\nping" | redis-cli 
+  $ printf 'PING\nPING\nping' | redis-cli 
   PONG
   PONG
   PONG
