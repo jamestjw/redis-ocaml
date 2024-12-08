@@ -1,6 +1,5 @@
 open Lwt
 open Redis
-open Core
 
 let default_backlog = 5 (* max number of concurrent clients *)
 let default_address = "127.0.0.1"
@@ -24,7 +23,7 @@ let accept_connection server conn =
   let oc = Lwt_io.of_fd ~mode:Lwt_io.Output fd in
   let%lwt () = Logs_lwt.info (fun m -> m "New connection") in
   Lwt.on_failure (handle_connection ic oc server ()) (fun e ->
-    Logs.err (fun m -> m "%s" (Exn.to_string e)));
+    Logs.err (fun m -> m "%s" (Core.Exn.to_string e)));
   return_unit
 ;;
 
@@ -33,7 +32,8 @@ let create_server_socket ~address ~port ~backlog =
   (* Create a TCP server socket *)
   let sock = socket PF_INET SOCK_STREAM 0 in
   setsockopt sock SO_REUSEADDR true;
-  Lwt.async (fun _ -> bind sock (ADDR_INET (Core_unix.Inet_addr.of_string address, port)));
+  Lwt.async (fun _ ->
+    bind sock (ADDR_INET (Unix.inet_addr_of_string address, port)));
   listen sock backlog;
   sock
 ;;
@@ -43,7 +43,7 @@ let create_server ~sock ~rdb_dir ~rdb_filename =
   let rec loop () = Lwt_unix.accept sock >>= accept_connection server >>= loop in
   let start () =
     Lwt.on_failure (Server.run server ~rdb_dir ~rdb_filename) (fun e ->
-      Logs.err (fun m -> m "%s" (Exn.to_string e)));
+      Logs.err (fun m -> m "%s" (Core.Exn.to_string e)));
     loop ()
   in
   start
@@ -76,5 +76,5 @@ let command =
 let () =
   let () = Logs.set_reporter (Logs.format_reporter ()) in
   let () = Logs.set_level (Some Logs.Info) in
-  Command_unix.run command
+  Command.run command
 ;;

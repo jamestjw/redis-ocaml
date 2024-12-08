@@ -16,14 +16,13 @@
  (allow_empty true)
  (version 0.1)
  (depends base
-          core_unix
+          core
           fmt
           lwt
           lwt_ppx
           logs
           ppx_deriving
           ppx_jane
-          re
-          conf-linux-libc-dev))
+          re))
 
 (cram enable)

@@ -10,7 +10,7 @@ bug-reports: "https://github.com/codecrafters-io/build-your-own-redis/issues"
 depends: [
   "dune" {>= "3.16"}
   "base"
-  "core_unix"
+  "core"
   "fmt"
   "lwt"
   "lwt_ppx"
@@ -18,7 +18,6 @@ depends: [
   "ppx_deriving"
   "ppx_jane"
   "re"
-  "conf-linux-libc-dev"
   "odoc" {with-doc}
 ]
 build: [

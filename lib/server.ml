@@ -4,7 +4,7 @@ module StringMap = Stdlib.Map.Make (String)
 type t = { mailbox : (Cmd.t * Response.t Lwt_mvar.t) Lwt_mvar.t }
 
 type state =
-  { store : (string * float option) StringMap.t
+  { store : (string * Int63.t option) StringMap.t
   ; configs : string StringMap.t
   }
 
@@ -14,12 +14,12 @@ let mk_state ~rdb_dir ~rdb_filename =
     let expire_timestamp =
       expire_timestamp
       >>| function
-      | Parser.MILLISECS ms -> float_of_int ms /. 1000.0
-      | Parser.SECS s -> float_of_int s
+      | Parser.MILLISECS ms -> Int63.(of_int ms * of_int 1000)
+      | Parser.SECS s -> Int63.(of_int s * of_int 1_000_000)
     in
     StringMap.add key (value, expire_timestamp) map
   in
-  let do_db (map : (string * float option) StringMap.t) (db : Parser.database) =
+  let do_db map (db : Parser.database) =
     List.fold
       ~init:map
       ~f:(fun map { key; value; expire_timestamp } ->
@@ -32,12 +32,12 @@ let mk_state ~rdb_dir ~rdb_filename =
   in
   let rdb_full_filename = Filename.concat rdb_dir rdb_filename in
   let store =
-    match Sys_unix.file_exists rdb_full_filename with
-    | `No | `Unknown ->
+    match Stdlib.Sys.file_exists rdb_full_filename with
+    | false ->
       Logs.info (fun m ->
         m "RDB file (%s) does not exist, starting with blank database" rdb_full_filename);
       StringMap.empty
-    | `Yes ->
+    | true ->
       let rdb_bytes = Utils.read_all_bytes rdb_filename in
       (match Parser.parse_rdb rdb_bytes with
        | Ok pdb ->
@@ -59,7 +59,8 @@ let mk () = { mailbox = Lwt_mvar.create_empty () }
 
 let filter_expired (v, expiry) =
   match expiry with
-  | Some timeout when Float.compare (Core_unix.time ()) timeout > 0 -> None
+  | Some timeout when Int63.compare (Time_now.nanoseconds_since_unix_epoch ()) timeout > 0
+    -> None
   | _ -> Some v
 ;;
 
@@ -91,8 +92,12 @@ let handle_message cmd state =
     let expiry =
       match set_timeout with
       | None -> None
-      | Some (PX ms) -> Some (Core_unix.time () +. (Float.of_int ms /. 1000.0))
-      | Some (EX secs) -> Some (Core_unix.time () +. Float.of_int secs)
+      | Some (PX ms) ->
+        let ns = Int63.(of_int ms * of_int 1_000) in
+        Some Int63.(Time_now.nanoseconds_since_unix_epoch () + ns)
+      | Some (EX secs) ->
+        let ns = Int63.(of_int secs * of_int 1_000_000) in
+        Some Int63.(Time_now.nanoseconds_since_unix_epoch () + ns)
     in
     Response.SIMPLE "OK", set state set_key set_value expiry
   | Cmd.GET_CONFIG keys ->
