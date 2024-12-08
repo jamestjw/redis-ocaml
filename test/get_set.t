@@ -16,7 +16,7 @@ SETting with timeout (milliseconds):
   OK
   $ redis-cli GET promotion
   20
-  $ sleep 1
+  $ sleep 0.2
   $ redis-cli GET promotion
   
 
@@ -25,7 +25,7 @@ SETting with timeout (seconds):
   OK
   $ redis-cli GET message
   happy birthday
-  $ sleep 2
+  $ sleep 1
   $ redis-cli GET message
   
 
