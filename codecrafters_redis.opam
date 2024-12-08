@@ -18,6 +18,7 @@ depends: [
   "ppx_deriving"
   "ppx_jane"
   "re"
+  "conf-linux-libc-dev"
   "odoc" {with-doc}
 ]
 build: [
