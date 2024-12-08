@@ -4,9 +4,13 @@ module StringMap = Stdlib.Map.Make (String)
 type t = { mailbox : (Cmd.t * Response.t Lwt_mvar.t) Lwt_mvar.t }
 
 type state =
-  { store : (string * float option) StringMap.t
+  { (* Storing the expiry in nanoseconds *)
+    store : (string * Int63.t option) StringMap.t
   ; configs : string StringMap.t
   }
+
+let ms_to_ns ms = Int63.(of_int ms * of_int 1_000_000)
+let s_to_ns s = Int63.(of_int s * of_int 1_000_000_000)
 
 let mk_state ~rdb_dir ~rdb_filename =
   let do_key_value map key value expire_timestamp =
@@ -14,12 +18,12 @@ let mk_state ~rdb_dir ~rdb_filename =
     let expire_timestamp =
       expire_timestamp
       >>| function
-      | Parser.MILLISECS ms -> float_of_int ms /. 1000.0
-      | Parser.SECS s -> float_of_int s
+      | Parser.MILLISECS ms -> ms_to_ns ms
+      | Parser.SECS s -> s_to_ns s
     in
     StringMap.add key (value, expire_timestamp) map
   in
-  let do_db (map : (string * float option) StringMap.t) (db : Parser.database) =
+  let do_db map (db : Parser.database) =
     List.fold
       ~init:map
       ~f:(fun map { key; value; expire_timestamp } ->
@@ -59,7 +63,8 @@ let mk () = { mailbox = Lwt_mvar.create_empty () }
 
 let filter_expired (v, expiry) =
   match expiry with
-  | Some timeout when Float.compare (Core_unix.time ()) timeout > 0 -> None
+  | Some timeout
+    when Int63.compare (Time_now.nanoseconds_since_unix_epoch ()) timeout >= 0 -> None
   | _ -> Some v
 ;;
 
@@ -91,8 +96,10 @@ let handle_message cmd state =
     let expiry =
       match set_timeout with
       | None -> None
-      | Some (PX ms) -> Some (Core_unix.time () +. (Float.of_int ms /. 1000.0))
-      | Some (EX secs) -> Some (Core_unix.time () +. Float.of_int secs)
+      | Some (PX ms) ->
+        Some Int63.(Time_now.nanoseconds_since_unix_epoch () + ms_to_ns ms)
+      | Some (EX secs) ->
+        Some Int63.(Time_now.nanoseconds_since_unix_epoch () + s_to_ns secs)
     in
     Response.SIMPLE "OK", set state set_key set_value expiry
   | Cmd.GET_CONFIG keys ->
