@@ -368,7 +368,7 @@ let parse_rdb bytes =
   let%bind metadata, bytes = parse_metadata bytes in
   let%bind databases, bytes = parse_databases bytes in
   let%bind checksum, bytes = parse_eof bytes in
-  match bytes with
-  | [] -> Ok { header; metadata; databases; checksum }
-  | _ -> Error "unexpected  trailing bytes"
+  if not @@ List.is_empty bytes
+  then Logs.warn (fun m -> m "trailing bytes found in RDB file, ignoring...");
+  Ok { header; metadata; databases; checksum }
 ;;
