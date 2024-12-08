@@ -42,7 +42,7 @@ let mk_state ~rdb_dir ~rdb_filename =
         m "RDB file (%s) does not exist, starting with blank database" rdb_full_filename);
       StringMap.empty
     | `Yes ->
-      let rdb_bytes = Utils.read_all_bytes rdb_filename in
+      let rdb_bytes = Utils.read_all_bytes rdb_full_filename in
       (match Parser.parse_rdb rdb_bytes with
        | Ok pdb ->
          Logs.info (fun m -> m "RDB file (%s) loaded" rdb_full_filename);
