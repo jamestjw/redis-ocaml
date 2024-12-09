@@ -66,6 +66,8 @@ let parse_keys_cmd args =
   | _ -> Cmd.INVALID "'KEYS' takes one arg"
 ;;
 
+let parse_info_cmd args = Cmd.INFO args
+
 let args_to_cmd args =
   match lower_fst args with
   | "ping" :: args -> parse_ping_cmd args
@@ -74,6 +76,7 @@ let args_to_cmd args =
   | "set" :: args -> parse_set_cmd args
   | "config" :: args -> parse_config_cmd args
   | "keys" :: args -> parse_keys_cmd args
+  | "info" :: args -> parse_info_cmd args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;

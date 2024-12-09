@@ -14,5 +14,6 @@ type t =
       }
   | GET_CONFIG of string list
   | KEYS of string
+  | INFO of string list
   | INVALID of string
 [@@deriving show { with_path = false }]

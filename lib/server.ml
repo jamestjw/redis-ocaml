@@ -117,6 +117,7 @@ let handle_message cmd state =
       |> List.filter_map ~f:(fun e -> if matcher e then Some (Response.BULK e) else None)
     in
     Response.ARRAY keys, state
+  | Cmd.INFO args -> Response.BULK (Replication.fetch_info args), state
   | Cmd.INVALID s -> Response.ERR s, state
 ;;
 
