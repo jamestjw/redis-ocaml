@@ -2,7 +2,10 @@ open Core
 open Lwt
 module StringMap = Stdlib.Map.Make (String)
 
+(* To parse RESP arrays *)
 let num_args_regex = Str.regexp {|\*\([0-9]+\)|}
+
+(* To parse BULK strings *)
 let arg_len_regex = Str.regexp {|\$\([0-9]+\)|}
 
 type 'a parse_result =
@@ -83,7 +86,7 @@ let args_to_cmd args =
 
 (* Polls the input channel for a valid command, if this returns None this
    means that the connection has been dropped by the client. *)
-let rec get_cmd ic =
+let rec parse_resp_array ic =
   let parse_len regexp =
     let%lwt msg = Lwt_io.read_line_opt ic in
     match msg with
@@ -93,8 +96,8 @@ let rec get_cmd ic =
       then return @@ Parsed (Stdlib.int_of_string @@ Str.matched_group 1 msg)
       else return @@ InvalidFormat msg
   in
-  let parse_args num_args =
-    let rec parse_args' num_args acc =
+  let parse_bulk_strings count =
+    let rec parse_bulk_strings' num_args acc =
       if num_args = 0
       then return @@ Parsed (List.rev acc)
       else (
@@ -113,23 +116,33 @@ let rec get_cmd ic =
                Logs_lwt.err (fun m -> m "Argument (%s) length != %d" arg arg_len)
              in
              return @@ InvalidFormat arg
-           | Some arg -> parse_args' (num_args - 1) (arg :: acc)))
+           | Some arg -> parse_bulk_strings' (num_args - 1) (arg :: acc)))
     in
-    parse_args' num_args []
+    parse_bulk_strings' count []
   in
   let%lwt num_args = parse_len num_args_regex in
   match num_args with
   | Disconnected -> return None
   | InvalidFormat s ->
     let%lwt _ = Logs_lwt.err (fun m -> m "Received malformed length %s" s) in
-    get_cmd ic
-  | Parsed num_args when num_args <= 0 -> get_cmd ic
+    parse_resp_array ic
+  | Parsed num_args when num_args <= 0 -> parse_resp_array ic
   | Parsed num_args ->
-    let%lwt arg_list = parse_args num_args in
+    let%lwt arg_list = parse_bulk_strings num_args in
     (match arg_list with
      | Disconnected -> return None
-     | InvalidFormat s -> return @@ Some (Cmd.INVALID s)
-     | Parsed arg_list -> return @@ Some (args_to_cmd arg_list))
+     | InvalidFormat s ->
+       let%lwt _ = Logs_lwt.err (fun m -> m "Invalid command format %s" s) in
+       return @@ Some []
+     | Parsed arg_list -> return @@ Some arg_list)
+;;
+
+let get_cmd ic =
+  let%lwt args = parse_resp_array ic in
+  match args with
+  | None -> return None
+  | Some [] -> return @@ Some (Cmd.INVALID "missing or malformed command")
+  | Some args -> return @@ Some (args_to_cmd args)
 ;;
 
 (* RDB file, parsed based on the specs in https://rdb.fnordig.de/file_format.html *)

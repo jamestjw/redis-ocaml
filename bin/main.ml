@@ -49,6 +49,12 @@ let create_server ~sock ~rdb_dir ~rdb_filename ~replica_of =
   start
 ;;
 
+let parse_replica_of str =
+  if not @@ Str.string_match (Str.regexp {|^\([^ ]+\)[ ]+\([0-9]+\)$|}) str 0
+  then failwith "master format incorrect: expected '<MASTER_HOST> <MASTER_PORT>'"
+  else Str.matched_group 1 str, int_of_string @@ Str.matched_group 2 str
+;;
+
 let command =
   Command.basic
     ~summary:"Implementation of a Redis server in OCaml."
@@ -75,6 +81,7 @@ let command =
      let rdb_dir = Option.value rdb_dir ~default:default_rdb_dir in
      let rdb_filename = Option.value rdb_file_name ~default:default_rdb_filename in
      let port = Option.value port ~default:default_port in
+     let replica_of = Option.map ~f:parse_replica_of replica_of in
      fun () ->
        let server_socket =
          create_server_socket ~address:default_address ~port ~backlog:default_backlog
