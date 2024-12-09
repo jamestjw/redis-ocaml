@@ -38,11 +38,11 @@ let create_server_socket ~address ~port ~backlog =
   sock
 ;;
 
-let create_server ~sock ~rdb_dir ~rdb_filename =
+let create_server ~sock ~rdb_dir ~rdb_filename ~replica_of =
   let server = Server.mk () in
   let rec loop () = Lwt_unix.accept sock >>= accept_connection server >>= loop in
   let start () =
-    Lwt.on_failure (Server.run server ~rdb_dir ~rdb_filename) (fun e ->
+    Lwt.on_failure (Server.run server ~rdb_dir ~rdb_filename ~replica_of) (fun e ->
       Logs.err (fun m -> m "%s" (Exn.to_string e)));
     loop ()
   in
@@ -64,6 +64,13 @@ let command =
          "--port"
          (optional int)
          ~doc:"port_number the port that the TCP server should listen to"
+     and replica_of =
+       flag
+         "--replicaof"
+         (optional string)
+         ~doc:
+           "address_port the TCP server that hosts the master instance that we should \
+            replicate"
      in
      let rdb_dir = Option.value rdb_dir ~default:default_rdb_dir in
      let rdb_filename = Option.value rdb_file_name ~default:default_rdb_filename in
@@ -72,7 +79,7 @@ let command =
        let server_socket =
          create_server_socket ~address:default_address ~port ~backlog:default_backlog
        in
-       let serve = create_server ~sock:server_socket ~rdb_dir ~rdb_filename in
+       let serve = create_server ~sock:server_socket ~rdb_dir ~rdb_filename ~replica_of in
        Lwt_main.run @@ serve ())
 ;;
 

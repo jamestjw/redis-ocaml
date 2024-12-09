@@ -1,4 +1,5 @@
 open Core
+module StringMap = Stdlib.Map.Make (String)
 
 let read_all_bytes filename =
   let ic = In_channel.create ~binary:true filename in
