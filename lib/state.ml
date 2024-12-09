@@ -1,12 +1,17 @@
 open Core
-
 module StringMap = Utils.StringMap
+
+type replication =
+  { replica_of : string option
+  ; replication_id : string
+  ; offset : int
+  }
 
 type t =
   { (* Storing the expiry in nanoseconds *)
     store : (string * Int63.t option) StringMap.t
   ; configs : string StringMap.t
-  ; replica_of : string option
+  ; replication : replication
   }
 
 let ms_to_ns ms = Int63.(of_int ms * of_int 1_000_000)
@@ -56,6 +61,10 @@ let mk_state ~rdb_dir ~rdb_filename ~replica_of =
       StringMap.empty
       |> StringMap.add "dir" rdb_dir
       |> StringMap.add "dbfilename" rdb_filename
-  ; replica_of
+  ; replication =
+      { replica_of
+      ; replication_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
+      ; offset = 0
+      }
   }
 ;;

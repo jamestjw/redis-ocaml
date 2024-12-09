@@ -3,7 +3,6 @@ open State
 
 type t = { mailbox : (Cmd.t * Response.t Lwt_mvar.t) Lwt_mvar.t }
 
-
 let mk () = { mailbox = Lwt_mvar.create_empty () }
 
 let filter_expired (v, expiry) =
@@ -26,7 +25,7 @@ let get_keys { store; _ } =
 
 let get_config { configs; _ } key = StringMap.find_opt key configs
 
-let handle_message cmd state =
+let handle_message cmd ({ replication; _ } as state) =
   match cmd with
   | Cmd.PING -> Response.SIMPLE "PONG", state
   | Cmd.ECHO s -> Response.BULK s, state
@@ -62,7 +61,7 @@ let handle_message cmd state =
       |> List.filter_map ~f:(fun e -> if matcher e then Some (Response.BULK e) else None)
     in
     Response.ARRAY keys, state
-  | Cmd.INFO args -> Response.BULK (Replication.fetch_info state args), state
+  | Cmd.INFO args -> Response.BULK (Replication.fetch_info replication args), state
   | Cmd.INVALID s -> Response.ERR s, state
 ;;
 
