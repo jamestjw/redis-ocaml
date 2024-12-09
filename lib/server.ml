@@ -66,13 +66,16 @@ let handle_message cmd ({ replication; _ } as state) =
 ;;
 
 let run { mailbox } ~rdb_dir ~rdb_filename ~replica_of =
+  let state = mk_state ~rdb_dir ~rdb_filename ~replica_of in
   let rec inner context =
     let%lwt cmd, response_mailbox = Lwt_mvar.take mailbox in
     let resp, context = handle_message cmd context in
     Lwt.async (fun _ -> Lwt_mvar.put response_mailbox resp);
     inner context
   in
-  inner (mk_state ~rdb_dir ~rdb_filename ~replica_of)
+  if Option.is_some replica_of
+  then Lwt.async (fun _ -> Replication.initiate_handshake state.replication);
+  inner state
 ;;
 
 let execute_cmd cmd { mailbox } =
