@@ -2,7 +2,7 @@ open Core
 module StringMap = Utils.StringMap
 
 type replication =
-  { replica_of : string option
+  { replica_of : (string * int) option
   ; replication_id : string
   ; offset : int
   }

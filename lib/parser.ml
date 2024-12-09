@@ -2,7 +2,9 @@ open Core
 open Lwt
 module StringMap = Stdlib.Map.Make (String)
 
+(* To parse RESP arrays *)
 let num_args_regex = Str.regexp {|\*\([0-9]+\)|}
+(* To parse BULK strings *)
 let arg_len_regex = Str.regexp {|\$\([0-9]+\)|}
 
 type 'a parse_result =
