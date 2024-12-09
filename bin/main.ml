@@ -59,15 +59,18 @@ let command =
          ~doc:"path the path where the RDB file should be stored"
      and rdb_file_name =
        flag "--dbfilename" (optional string) ~doc:"filename the name of the RDB file"
+     and port =
+       flag
+         "--port"
+         (optional int)
+         ~doc:"port_number the port that the TCP server should listen to"
      in
      let rdb_dir = Option.value rdb_dir ~default:default_rdb_dir in
      let rdb_filename = Option.value rdb_file_name ~default:default_rdb_filename in
+     let port = Option.value port ~default:default_port in
      fun () ->
        let server_socket =
-         create_server_socket
-           ~address:default_address
-           ~port:default_port
-           ~backlog:default_backlog
+         create_server_socket ~address:default_address ~port ~backlog:default_backlog
        in
        let serve = create_server ~sock:server_socket ~rdb_dir ~rdb_filename in
        Lwt_main.run @@ serve ())
