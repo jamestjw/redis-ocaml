@@ -72,6 +72,16 @@ let parse_keys_cmd args =
 
 let parse_info_cmd args = Cmd.INFO args
 
+let parse_replconf_cmd args =
+  match lower_fst args with
+  | [ "listening-port"; port ] ->
+    (match int_of_string_opt port with
+     | Some port -> Cmd.REPL_CONF_PORT port
+     | None -> Cmd.INVALID "'REPLCONF' listening port isn't a valid integer")
+  | [ "capa"; capa ] -> Cmd.REPL_CONF_CAPA capa
+  | _ -> Cmd.INVALID "'KEYS' takes one arg"
+;;
+
 let args_to_cmd args =
   match lower_fst args with
   | "ping" :: args -> parse_ping_cmd args
@@ -81,6 +91,7 @@ let args_to_cmd args =
   | "config" :: args -> parse_config_cmd args
   | "keys" :: args -> parse_keys_cmd args
   | "info" :: args -> parse_info_cmd args
+  | "replconf" :: args -> parse_replconf_cmd args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;

@@ -1,5 +1,9 @@
 (* Client that replicas use to communicate with master *)
+open Core
 open Lwt_unix
+open Lwt
+
+let default_replication_capabilities = "psync2"
 
 let connect_to_server ~host ~port =
   let%lwt _ = Logs_lwt.info (fun m -> m "Connecting to server...") in
@@ -12,13 +16,17 @@ let connect_to_server ~host ~port =
   let in_channel = Lwt_io.of_fd ~mode:Lwt_io.Input sock in
   let out_channel = Lwt_io.of_fd ~mode:Lwt_io.Output sock in
   let%lwt _ = Logs_lwt.info (fun m -> m "Successfully connected to master.") in
-  Lwt.return (sock, in_channel, out_channel)
+  return (sock, in_channel, out_channel)
 ;;
 
 let cmd_to_str cmd =
+  let list_to_bulk = List.map ~f:(fun e -> Response.BULK e) in
   let args =
     match cmd with
-    | Cmd.PING -> [ Response.BULK "PING" ]
+    | Cmd.PING -> list_to_bulk [ "PING" ]
+    | Cmd.REPL_CONF_PORT port ->
+      list_to_bulk [ "REPLCONF"; "listening-port"; string_of_int port ]
+    | Cmd.REPL_CONF_CAPA capabilities -> list_to_bulk [ "REPLCONF"; "capa"; capabilities ]
     | _ -> failwith "not implemented yet"
   in
   Response.(serialize @@ ARRAY args)
@@ -30,7 +38,6 @@ let send_request oc cmd =
 ;;
 
 let send_ping (ic, oc) =
-  let open Lwt in
   let%lwt () = send_request oc Cmd.PING in
   match%lwt Parser.parse_simple ic with
   | Parsed "PONG" -> return @@ Ok ()
@@ -39,6 +46,32 @@ let send_ping (ic, oc) =
     @@ Error (Printf.sprintf "invalid response, expected 'PONG' but got %s instead" msg)
   | Disconnected -> return @@ Error (Printf.sprintf "no response from server")
   | InvalidFormat s -> return @@ Error (Printf.sprintf "invalid response to PING: %s" s)
+;;
+
+let send_replication_config (ic, oc) port =
+  let%lwt _ = Logs_lwt.info (fun m -> m "Sending listening port %d to master" port) in
+  let%lwt () = send_request oc @@ Cmd.REPL_CONF_PORT port in
+  match%lwt Parser.parse_simple ic with
+  | Parsed "OK" ->
+    let%lwt _ =
+      Logs_lwt.info (fun m ->
+        m "Sending replication capabilities %s to master" default_replication_capabilities)
+    in
+    let%lwt () = send_request oc @@ Cmd.REPL_CONF_CAPA default_replication_capabilities in
+    (match%lwt Parser.parse_simple ic with
+     | Parsed "OK" -> return @@ Ok ()
+     | Parsed msg ->
+       return
+       @@ Error (Printf.sprintf "invalid response, expected 'OK' but got %s instead" msg)
+     | Disconnected -> return @@ Error (Printf.sprintf "no response from server")
+     | InvalidFormat s ->
+       return @@ Error (Printf.sprintf "invalid response to REPLCONF capa: %s" s))
+  | Parsed msg ->
+    return
+    @@ Error (Printf.sprintf "invalid response, expected 'PONG' but got %s instead" msg)
+  | Disconnected -> return @@ Error (Printf.sprintf "no response from server")
+  | InvalidFormat s ->
+    return @@ Error (Printf.sprintf "invalid response to REPLCONF listening-port: %s" s)
 ;;
 
 let close_connection sock = Lwt_unix.close sock

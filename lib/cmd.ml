@@ -15,5 +15,7 @@ type t =
   | GET_CONFIG of string list
   | KEYS of string
   | INFO of string list
+  | REPL_CONF_PORT of int
+  | REPL_CONF_CAPA of string (* replication capabilities *)
   | INVALID of string
 [@@deriving show { with_path = false }]

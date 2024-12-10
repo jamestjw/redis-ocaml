@@ -38,12 +38,13 @@ let create_server_socket ~address ~port ~backlog =
   sock
 ;;
 
-let create_server ~sock ~rdb_dir ~rdb_filename ~replica_of =
+let create_server ~sock ~rdb_dir ~rdb_filename ~replica_of ~listening_port =
   let server = Server.mk () in
   let rec loop () = Lwt_unix.accept sock >>= accept_connection server >>= loop in
   let start () =
-    Lwt.on_failure (Server.run server ~rdb_dir ~rdb_filename ~replica_of) (fun e ->
-      Logs.err (fun m -> m "%s" (Exn.to_string e)));
+    Lwt.on_failure
+      (Server.run server ~rdb_dir ~rdb_filename ~replica_of ~listening_port)
+      (fun e -> Logs.err (fun m -> m "%s" (Exn.to_string e)));
     loop ()
   in
   start
@@ -86,7 +87,14 @@ let command =
        let server_socket =
          create_server_socket ~address:default_address ~port ~backlog:default_backlog
        in
-       let serve = create_server ~sock:server_socket ~rdb_dir ~rdb_filename ~replica_of in
+       let serve =
+         create_server
+           ~sock:server_socket
+           ~rdb_dir
+           ~rdb_filename
+           ~replica_of
+           ~listening_port:port
+       in
        Lwt_main.run @@ serve ())
 ;;
 
