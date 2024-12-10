@@ -12,6 +12,8 @@ Start replica:
   redis_ocaml_server: [INFO] RDB file (/tmp/redis-data/rdbfile) does not exist, starting with blank database
   redis_ocaml_server: [INFO] Connecting to server...
   redis_ocaml_server: [INFO] Successfully connected to master.
+  redis_ocaml_server: [INFO] Sending listening port 6380 to master
+  redis_ocaml_server: [INFO] Sending replication capabilities psync2 to master
   redis_ocaml_server: [INFO] Successful handshake
   redis_ocaml_server: [INFO] New connection
   redis_ocaml_server: [INFO] Received command (INFO ["replication"])

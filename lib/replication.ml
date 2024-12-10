@@ -16,7 +16,7 @@ let fetch_info { replica_of; replication_id; offset } _ =
   |> String.concat ~sep:"\r\n"
 ;;
 
-let initiate_handshake { replica_of; _ } =
+let initiate_handshake { replica_of; _ } listening_port =
   match replica_of with
   | None ->
     let%lwt _ =
@@ -29,7 +29,11 @@ let initiate_handshake { replica_of; _ } =
     let%lwt res = Client.send_ping (ic, oc) in
     let%lwt () =
       match res with
-      | Ok _ -> Logs_lwt.info (fun m -> m "Successful handshake")
+      | Ok _ ->
+        let%lwt res = Client.send_replication_config (ic, oc) listening_port in
+        (match res with
+         | Ok _ -> Logs_lwt.info (fun m -> m "Successful handshake")
+         | Error err -> Logs_lwt.err (fun m -> m "Handshake failed %s" err))
       | Error err -> Logs_lwt.err (fun m -> m "Handshake failed %s" err)
     in
     Client.close_connection sock

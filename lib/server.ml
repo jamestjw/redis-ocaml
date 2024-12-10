@@ -62,10 +62,13 @@ let handle_message cmd ({ replication; _ } as state) =
     in
     Response.ARRAY keys, state
   | Cmd.INFO args -> Response.BULK (Replication.fetch_info replication args), state
+  (* TODO: actually do something with these two *)
+  | Cmd.REPL_CONF_PORT _ -> Response.SIMPLE "OK", state
+  | Cmd.REPL_CONF_CAPA _ -> Response.SIMPLE "OK", state
   | Cmd.INVALID s -> Response.ERR s, state
 ;;
 
-let run { mailbox } ~rdb_dir ~rdb_filename ~replica_of =
+let run { mailbox } ~rdb_dir ~rdb_filename ~replica_of ~listening_port =
   let state = mk_state ~rdb_dir ~rdb_filename ~replica_of in
   let rec inner context =
     let%lwt cmd, response_mailbox = Lwt_mvar.take mailbox in
@@ -74,7 +77,8 @@ let run { mailbox } ~rdb_dir ~rdb_filename ~replica_of =
     inner context
   in
   if Option.is_some replica_of
-  then Lwt.async (fun _ -> Replication.initiate_handshake state.replication);
+  then
+    Lwt.async (fun _ -> Replication.initiate_handshake state.replication listening_port);
   inner state
 ;;
 
