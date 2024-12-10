@@ -8,7 +8,14 @@ Get replication info as master
   master_repl_offset:0
 
 Start replica:
-  $ nohup redis_ocaml_server --replicaof "localhost 6379" --port 6380 >/dev/null 2>&1 &
+  $ redis_ocaml_server --replicaof "localhost 6379" --port 6380 &
+  redis_ocaml_server: [INFO] RDB file (/tmp/redis-data/rdbfile) does not exist, starting with blank database
+  redis_ocaml_server: [INFO] Connecting to server...
+  redis_ocaml_server: [INFO] Successfully connected to master.
+  redis_ocaml_server: [INFO] Successful handshake
+  redis_ocaml_server: [INFO] New connection
+  redis_ocaml_server: [INFO] Received command (INFO ["replication"])
+  redis_ocaml_server: [INFO] Connection closed
   $ sleep 0.2
 
 Get replication info as slave

@@ -20,11 +20,17 @@ let initiate_handshake { replica_of; _ } =
   match replica_of with
   | None ->
     let%lwt _ =
-      Logs_lwt.warn (fun m -> m "initiating handshake without master information")
+      Logs_lwt.warn (fun m ->
+        m "Initiating handshake without master information, aborting...")
     in
     Lwt.return_unit
   | Some (addr, port) ->
     let%lwt sock, ic, oc = Client.connect_to_server ~host:addr ~port in
-    let%lwt _ = Client.send_ping (ic, oc) in
+    let%lwt res = Client.send_ping (ic, oc) in
+    let%lwt () =
+      match res with
+      | Ok _ -> Logs_lwt.info (fun m -> m "Successful handshake")
+      | Error err -> Logs_lwt.err (fun m -> m "Handshake failed %s" err)
+    in
     Client.close_connection sock
 ;;

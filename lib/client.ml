@@ -24,17 +24,21 @@ let cmd_to_str cmd =
   Response.(serialize @@ ARRAY args)
 ;;
 
-let send_request (ic, oc) cmd =
+let send_request oc cmd =
   let%lwt _ = Lwt_io.write oc (cmd_to_str cmd) in
-  let%lwt resp = Lwt_io.read ic in
-  Lwt.return resp
+  Lwt.return_unit
 ;;
 
 let send_ping (ic, oc) =
-  let%lwt resp = send_request (ic, oc) Cmd.PING in
-  (* TODO: Check if this is PONG *)
-  match resp with
-  | _ -> Lwt.return ()
+  let open Lwt in
+  let%lwt () = send_request oc Cmd.PING in
+  match%lwt Parser.parse_simple ic with
+  | Parsed "PONG" -> return @@ Ok ()
+  | Parsed msg ->
+    return
+    @@ Error (Printf.sprintf "invalid response, expected 'PONG' but got %s instead" msg)
+  | Disconnected -> return @@ Error (Printf.sprintf "no response from server")
+  | InvalidFormat s -> return @@ Error (Printf.sprintf "invalid response to PING: %s" s)
 ;;
 
 let close_connection sock = Lwt_unix.close sock

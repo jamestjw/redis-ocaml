@@ -7,6 +7,7 @@ let num_args_regex = Str.regexp {|\*\([0-9]+\)|}
 
 (* To parse BULK strings *)
 let arg_len_regex = Str.regexp {|\$\([0-9]+\)|}
+let simple_regex = Str.regexp {|\+\(.*\)|}
 
 type 'a parse_result =
   | Disconnected
@@ -86,7 +87,7 @@ let args_to_cmd args =
 
 (* Polls the input channel for a valid command, if this returns None this
    means that the connection has been dropped by the client. *)
-let rec parse_resp_array ic =
+let parse_resp_array ic =
   let parse_len regexp =
     let%lwt msg = Lwt_io.read_line_opt ic in
     match msg with
@@ -125,8 +126,12 @@ let rec parse_resp_array ic =
   | Disconnected -> return None
   | InvalidFormat s ->
     let%lwt _ = Logs_lwt.err (fun m -> m "Received malformed length %s" s) in
-    parse_resp_array ic
-  | Parsed num_args when num_args <= 0 -> parse_resp_array ic
+    return @@ Some []
+  | Parsed num_args when num_args <= 0 ->
+    let%lwt _ =
+      Logs_lwt.err (fun m -> m "Length %d of array is not greater than zero" num_args)
+    in
+    return @@ Some []
   | Parsed num_args ->
     let%lwt arg_list = parse_bulk_strings num_args in
     (match arg_list with
@@ -135,6 +140,21 @@ let rec parse_resp_array ic =
        let%lwt _ = Logs_lwt.err (fun m -> m "Invalid command format %s" s) in
        return @@ Some []
      | Parsed arg_list -> return @@ Some arg_list)
+;;
+
+let parse_simple ic =
+  let%lwt msg = Lwt_io.read_line_opt ic in
+  match msg with
+  | None -> return Disconnected
+  | Some msg ->
+    if Str.string_match simple_regex msg 0
+    then return @@ Parsed (Str.matched_group 1 msg)
+    else
+      return
+      @@ InvalidFormat
+           (Printf.sprintf
+              "expected SIMPLE string, i.e. starting with '+', but got %s instead"
+              msg)
 ;;
 
 let get_cmd ic =
