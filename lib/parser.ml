@@ -82,6 +82,15 @@ let parse_replconf_cmd args =
   | _ -> Cmd.INVALID "'KEYS' takes one arg"
 ;;
 
+let parse_psync_cmd args =
+  match args with
+  | [ replication_id; offset ] ->
+    (match int_of_string_opt offset with
+     | Some offset -> Cmd.PSYNC (replication_id, offset)
+     | None -> Cmd.INVALID "'PSYNC' offset isn't a valid integer")
+  | _ -> Cmd.INVALID "'PSYNC' takes 2 args"
+;;
+
 let args_to_cmd args =
   match lower_fst args with
   | "ping" :: args -> parse_ping_cmd args
@@ -92,6 +101,7 @@ let args_to_cmd args =
   | "keys" :: args -> parse_keys_cmd args
   | "info" :: args -> parse_info_cmd args
   | "replconf" :: args -> parse_replconf_cmd args
+  | "psync" :: args -> parse_psync_cmd args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;
