@@ -41,12 +41,12 @@ let send_request oc cmd =
 let send_ping (ic, oc) =
   let%lwt () = send_request oc Cmd.PING in
   match%lwt Parser.parse_simple ic with
-  | Parsed "PONG" -> return @@ Ok ()
+  | Parsed "PONG" -> Lwt_result.return ()
   | Parsed msg ->
-    return
-    @@ Error (Printf.sprintf "invalid response, expected 'PONG' but got %s instead" msg)
-  | Disconnected -> return @@ Error (Printf.sprintf "no response from server")
-  | InvalidFormat s -> return @@ Error (Printf.sprintf "invalid response to PING: %s" s)
+    Lwt_result.fail
+      (Printf.sprintf "invalid response, expected 'PONG' but got %s instead" msg)
+  | Disconnected -> Lwt_result.fail (Printf.sprintf "no response from server")
+  | InvalidFormat s -> Lwt_result.fail (Printf.sprintf "invalid response to PING: %s" s)
 ;;
 
 let send_replication_config (ic, oc) port =
@@ -60,19 +60,20 @@ let send_replication_config (ic, oc) port =
     in
     let%lwt () = send_request oc @@ Cmd.REPL_CONF_CAPA default_replication_capabilities in
     (match%lwt Parser.parse_simple ic with
-     | Parsed "OK" -> return @@ Ok ()
+     | Parsed "OK" -> Lwt_result.return ()
      | Parsed msg ->
-       return
-       @@ Error (Printf.sprintf "invalid response, expected 'OK' but got %s instead" msg)
-     | Disconnected -> return @@ Error (Printf.sprintf "no response from server")
+       Lwt_result.fail
+         (Printf.sprintf "invalid response, expected 'OK' but got %s instead" msg)
+     | Disconnected -> Lwt_result.fail (Printf.sprintf "no response from server")
      | InvalidFormat s ->
-       return @@ Error (Printf.sprintf "invalid response to REPLCONF capa: %s" s))
+       Lwt_result.fail (Printf.sprintf "invalid response to REPLCONF capa: %s" s))
   | Parsed msg ->
-    return
-    @@ Error (Printf.sprintf "invalid response, expected 'PONG' but got %s instead" msg)
-  | Disconnected -> return @@ Error (Printf.sprintf "No response from server to REPLCONF")
+    Lwt_result.fail
+      (Printf.sprintf "invalid response, expected 'PONG' but got %s instead" msg)
+  | Disconnected ->
+    Lwt_result.fail @@ Printf.sprintf "No response from server to REPLCONF"
   | InvalidFormat s ->
-    return @@ Error (Printf.sprintf "invalid response to REPLCONF listening-port: %s" s)
+    Lwt_result.fail @@ Printf.sprintf "invalid response to REPLCONF listening-port: %s" s
 ;;
 
 let initiate_replication_stream (ic, oc) =
@@ -82,12 +83,12 @@ let initiate_replication_stream (ic, oc) =
   match%lwt Parser.parse_simple ic with
   | Parsed res when Str.string_match psync_response_regex res 0 ->
     (* TODO: actually do something with this *)
-    return @@ Ok ()
-  | Parsed s -> return @@ Error (Printf.sprintf "invalid response to PSYNC: %s" s)
+    Lwt_result.return ()
+  | Parsed s -> Lwt_result.fail (Printf.sprintf "invalid response to PSYNC: %s" s)
   | Disconnected ->
-    return
-    @@ Error (Printf.sprintf "No response from server to replication stream initiation")
-  | InvalidFormat s -> return @@ Error (Printf.sprintf "invalid response to PSYNC: %s" s)
+    Lwt_result.fail
+      (Printf.sprintf "No response from server to replication stream initiation")
+  | InvalidFormat s -> Lwt_result.fail (Printf.sprintf "invalid response to PSYNC: %s" s)
 ;;
 
 let close_connection sock = Lwt_unix.close sock

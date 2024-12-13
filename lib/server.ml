@@ -81,7 +81,11 @@ let run { mailbox } ~rdb_dir ~rdb_filename ~replica_of ~listening_port =
   in
   if Option.is_some replica_of
   then
-    Lwt.async (fun _ -> Replication.initiate_handshake state.replication listening_port);
+    Lwt.async (fun _ ->
+      match%lwt Replication.initiate_handshake state.replication listening_port with
+      | Ok () -> Logs_lwt.info (fun m -> m "Successfully completed handshake")
+      | Error e ->
+        Logs_lwt.err (fun m -> m "Failed to initiate handshake with master: %s" e));
   inner state
 ;;
 
