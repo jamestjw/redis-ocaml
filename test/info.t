@@ -14,7 +14,8 @@ Start replica:
   redis_ocaml_server: [INFO] Successfully connected to master.
   redis_ocaml_server: [INFO] Sending listening port 6380 to master
   redis_ocaml_server: [INFO] Sending replication capabilities psync2 to master
-  redis_ocaml_server: [INFO] Successful handshake
+  redis_ocaml_server: [INFO] Initiating replication stream
+  redis_ocaml_server: [INFO] Successfully completed handshake
   redis_ocaml_server: [INFO] New connection
   redis_ocaml_server: [INFO] Received command (INFO ["replication"])
   redis_ocaml_server: [INFO] Connection closed
