@@ -1,5 +1,17 @@
 Start redis:
   $ flock /tmp/redis-test.lock ./run_redis.sh
+  redis_ocaml_server: [INFO] RDB file (/tmp/redis-data/rdbfile) does not exist, starting with blank database
+  redis_ocaml_server: [INFO] Received command PING
+  redis_ocaml_server: [INFO] Received command PING
+  redis_ocaml_server: [INFO] Received command PING
+  redis_ocaml_server: [INFO] Received command PING
+  redis_ocaml_server: [INFO] Received command PING
+  redis_ocaml_server: [INFO] Received command PING
+  redis_ocaml_server: [INFO] Received command PING
+  redis_ocaml_server: [INFO] Received command PING
+  redis_ocaml_server: [INFO] Received command PING
+  redis_ocaml_server: [INFO] Received command PING
+  redis_ocaml_server: [INFO] Received command (INVALID "'PING' takes no args")
 
 Testing PING lowercase:
   $ redis-cli ping

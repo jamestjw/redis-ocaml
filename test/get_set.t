@@ -1,5 +1,23 @@
 Start redis:
   $ flock /tmp/redis-test.lock ./run_redis.sh
+  redis_ocaml_server: [INFO] RDB file (/tmp/redis-data/rdbfile) does not exist, starting with blank database
+  redis_ocaml_server: [INFO] Received command (GET "token")
+  redis_ocaml_server: [INFO] Received command SET {set_key = "token"; set_value = "42f3a00b71795be5c24fe891ea2fa78c";
+    set_timeout = None}
+  redis_ocaml_server: [INFO] Received command (GET "token")
+  redis_ocaml_server: [INFO] Received command SET {set_key = "promotion"; set_value = "20"; set_timeout = (Some (PX 100))}
+  redis_ocaml_server: [INFO] Received command (GET "promotion")
+  redis_ocaml_server: [INFO] Received command (GET "promotion")
+  redis_ocaml_server: [INFO] Received command SET {set_key = "message"; set_value = "happy birthday";
+    set_timeout = (Some (EX 1))}
+  redis_ocaml_server: [INFO] Received command (GET "message")
+  redis_ocaml_server: [INFO] Received command (GET "message")
+  redis_ocaml_server: [INFO] Received command (INVALID "'GET' takes one arg")
+  redis_ocaml_server: [INFO] Received command (INVALID "unknown arg 'pxx' for 'SET'")
+  redis_ocaml_server: [INFO] Received command (INVALID "timeout set twice for 'SET' command")
+  redis_ocaml_server: [INFO] Received command (INVALID "timeout set twice for 'SET' command")
+  redis_ocaml_server: [INFO] Received command (INVALID "'SET' requires positive integer for timeout")
+  redis_ocaml_server: [INFO] Received command (INVALID "'SET' requires positive integer for timeout")
 
 GET without setting:
   $ redis-cli GET token

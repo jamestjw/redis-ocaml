@@ -1,5 +1,10 @@
 Start redis:
   $ flock /tmp/redis-test.lock ./run_redis.sh
+  redis_ocaml_server: [INFO] RDB file (/tmp/redis-data/rdbfile) does not exist, starting with blank database
+  redis_ocaml_server: [INFO] Received command (ECHO "test")
+  redis_ocaml_server: [INFO] Received command (ECHO "123456")
+  redis_ocaml_server: [INFO] Received command (ECHO "hello world")
+  redis_ocaml_server: [INFO] Received command (INVALID "'ECHO' takes one arg")
 
 Testing ECHO simple:
   $ redis-cli ECHO test

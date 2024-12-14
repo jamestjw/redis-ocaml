@@ -9,7 +9,7 @@ while [ ! -z "$(netstat -lnp 2>/dev/null | grep $REDIS_PORT)" ]; do
   sleep 0.2
 done
 
-nohup redis_ocaml_server $ARGS >/dev/null 2>&1 &
+nohup redis_ocaml_server $ARGS &
 
 while [ -z "$(netstat -lnp 2>/dev/null | grep $REDIS_PORT)" ]; do
   sleep 0.1 # Wait until server is ready before returning

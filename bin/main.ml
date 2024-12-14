@@ -15,14 +15,14 @@ let rec handle_connection ic oc server () =
     let%lwt _ = Logs_lwt.info (fun m -> m "Received command %s" @@ Cmd.show cmd) in
     let%lwt resp = Server.execute_cmd cmd server in
     Lwt_io.write oc (Response.serialize resp) >>= handle_connection ic oc server
-  | None -> Logs_lwt.info (fun m -> m "Connection closed")
+  | None -> Logs_lwt.debug (fun m -> m "Connection closed")
 ;;
 
 let accept_connection server conn =
   let fd, _ = conn in
   let ic = Lwt_io.of_fd ~mode:Lwt_io.Input fd in
   let oc = Lwt_io.of_fd ~mode:Lwt_io.Output fd in
-  let%lwt () = Logs_lwt.info (fun m -> m "New connection") in
+  let%lwt () = Logs_lwt.debug (fun m -> m "New connection") in
   Lwt.on_failure (handle_connection ic oc server ()) (fun e ->
     Logs.err (fun m -> m "%s" (Exn.to_string e)));
   return_unit

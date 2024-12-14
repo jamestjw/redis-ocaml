@@ -2,6 +2,29 @@ KEYS fetches all keys from the store that are not expired
 
 Start redis:
   $ flock /tmp/redis-test.lock ./run_redis.sh
+  redis_ocaml_server: [INFO] RDB file (/tmp/redis-data/rdbfile) does not exist, starting with blank database
+  redis_ocaml_server: [INFO] Received command (KEYS "*")
+  redis_ocaml_server: [INFO] Received command SET {set_key = "test-key"; set_value = "1997"; set_timeout = None}
+  redis_ocaml_server: [INFO] Received command (KEYS "*")
+  redis_ocaml_server: [INFO] Received command SET {set_key = "other-key1"; set_value = "some-value1"; set_timeout = None}
+  redis_ocaml_server: [INFO] Received command SET {set_key = "other-key2"; set_value = "some-value2"; set_timeout = None}
+  redis_ocaml_server: [INFO] Received command SET {set_key = "other-key3"; set_value = "some-value3"; set_timeout = None}
+  redis_ocaml_server: [INFO] Received command (KEYS "*")
+  redis_ocaml_server: [INFO] Received command (KEYS "test*")
+  redis_ocaml_server: [INFO] Received command (KEYS "*test*")
+  redis_ocaml_server: [INFO] Received command (KEYS "*other*")
+  redis_ocaml_server: [INFO] Received command (KEYS "*key")
+  redis_ocaml_server: [INFO] Received command (KEYS "*key*")
+  redis_ocaml_server: [INFO] Received command (KEYS "*k?y*")
+  redis_ocaml_server: [INFO] Received command (KEYS "*key?")
+  redis_ocaml_server: [INFO] Received command (KEYS "*key[12]")
+  redis_ocaml_server: [INFO] Received command (KEYS "*key[^1]")
+  redis_ocaml_server: [INFO] Received command (KEYS "*key[1-2]")
+  redis_ocaml_server: [INFO] Received command SET {set_key = "key_a"; set_value = "1"; set_timeout = None}
+  redis_ocaml_server: [INFO] Received command SET {set_key = "key_b"; set_value = "1"; set_timeout = None}
+  redis_ocaml_server: [INFO] Received command SET {set_key = "key_c"; set_value = "1"; set_timeout = None}
+  redis_ocaml_server: [INFO] Received command SET {set_key = "key_d"; set_value = "1"; set_timeout = None}
+  redis_ocaml_server: [INFO] Received command (KEYS "key_[a-c]")
 
 KEYS with empty store:
   $ redis-cli KEYS "*"
