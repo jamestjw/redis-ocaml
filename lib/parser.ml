@@ -3,10 +3,10 @@ open Lwt
 module StringMap = Stdlib.Map.Make (String)
 
 (* To parse RESP arrays *)
-let num_args_regex = Str.regexp {|\*\([0-9]+\)|}
+let array_length_regex = Str.regexp {|\*\([0-9]+\)|}
 
 (* To parse BULK strings *)
-let arg_len_regex = Str.regexp {|\$\([0-9]+\)|}
+let bulk_str_len_regex = Str.regexp {|\$\([0-9]+\)|}
 let simple_regex = Str.regexp {|\+\(.*\)|}
 
 type 'a parse_result =
@@ -106,43 +106,52 @@ let args_to_cmd args =
   | _ -> Cmd.INVALID "invalid command"
 ;;
 
+let parse_len regexp ic =
+  let%lwt msg = Lwt_io.read_line_opt ic in
+  match msg with
+  | None -> return Disconnected
+  | Some msg ->
+    if Str.string_match regexp msg 0
+    then return @@ Parsed (Stdlib.int_of_string @@ Str.matched_group 1 msg)
+    else return @@ InvalidFormat msg
+;;
+
+let parse_bulk_string_len = parse_len bulk_str_len_regex
+let parse_array_len = parse_len array_length_regex
+
+let parse_bulk_string ic =
+  match%lwt parse_bulk_string_len ic with
+  | Disconnected -> return Disconnected
+  | InvalidFormat s ->
+    let%lwt _ = Logs_lwt.err (fun m -> m "Received malformed length %s" s) in
+    return (InvalidFormat s)
+  | Parsed arg_len ->
+    (match%lwt Lwt_io.read_line_opt ic with
+     | None -> return Disconnected
+     | Some arg when String.length arg <> arg_len ->
+       let%lwt _ = Logs_lwt.err (fun m -> m "Argument (%s) length != %d" arg arg_len) in
+       return @@ InvalidFormat arg
+     | Some arg -> return @@ Parsed arg)
+;;
+
 (* Polls the input channel for a valid command, if this returns None this
    means that the connection has been dropped by the client. *)
 let parse_resp_array ic =
-  let parse_len regexp =
-    let%lwt msg = Lwt_io.read_line_opt ic in
-    match msg with
-    | None -> return Disconnected
-    | Some msg ->
-      if Str.string_match regexp msg 0
-      then return @@ Parsed (Stdlib.int_of_string @@ Str.matched_group 1 msg)
-      else return @@ InvalidFormat msg
-  in
   let parse_bulk_strings count =
-    let rec parse_bulk_strings' num_args acc =
-      if num_args = 0
+    let rec parse_bulk_strings' count acc =
+      if count = 0
       then return @@ Parsed (List.rev acc)
       else (
-        let%lwt arg_len = parse_len arg_len_regex in
-        match arg_len with
+        match%lwt parse_bulk_string ic with
         | Disconnected -> return Disconnected
         | InvalidFormat s ->
-          let%lwt _ = Logs_lwt.err (fun m -> m "Received malformed length %s" s) in
+          let%lwt _ = Logs_lwt.err (fun m -> m "Couldn't parse string in array: %s" s) in
           return (InvalidFormat s)
-        | Parsed arg_len ->
-          let%lwt msg = Lwt_io.read_line_opt ic in
-          (match msg with
-           | None -> return Disconnected
-           | Some arg when String.length arg <> arg_len ->
-             let%lwt _ =
-               Logs_lwt.err (fun m -> m "Argument (%s) length != %d" arg arg_len)
-             in
-             return @@ InvalidFormat arg
-           | Some arg -> parse_bulk_strings' (num_args - 1) (arg :: acc)))
+        | Parsed str -> parse_bulk_strings' (count - 1) (str :: acc))
     in
     parse_bulk_strings' count []
   in
-  let%lwt num_args = parse_len num_args_regex in
+  let%lwt num_args = parse_array_len ic in
   match num_args with
   | Disconnected -> return None
   | InvalidFormat s ->

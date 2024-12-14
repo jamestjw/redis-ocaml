@@ -15,13 +15,13 @@ Get replication info as master
 
 Start replica:
   $ redis_ocaml_server --replicaof "localhost 6379" --port 6380 &
-  redis_ocaml_server: [INFO] RDB file (/tmp/redis-data/rdbfile) does not exist, starting with blank database
   redis_ocaml_server: [INFO] Connecting to server...
   redis_ocaml_server: [INFO] Successfully connected to master.
   redis_ocaml_server: [INFO] Sending listening port 6380 to master
   redis_ocaml_server: [INFO] Sending replication capabilities psync2 to master
   redis_ocaml_server: [INFO] Initiating replication stream
-  redis_ocaml_server: [INFO] Successfully completed handshake
+  redis_ocaml_server: [INFO] Waiting for RDB dump
+  redis_ocaml_server: [INFO] RDB file loaded
   redis_ocaml_server: [INFO] Received command (INFO ["replication"])
   $ sleep 0.2
 

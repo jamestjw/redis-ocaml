@@ -93,4 +93,16 @@ let initiate_replication_stream (ic, oc) =
   | InvalidFormat s -> Lwt_result.fail (Printf.sprintf "invalid response to PSYNC: %s" s)
 ;;
 
+let receive_rdb_dump ic =
+  let%lwt _ = Logs_lwt.info (fun m -> m "Waiting for RDB dump") in
+  match%lwt Parser.parse_bulk_string_len ic with
+  | Parsed num_bytes ->
+    let buffer = Bytes.create num_bytes in
+    let%lwt _ = Lwt_io.read_into_exactly ic buffer 0 num_bytes in
+    Lwt_result.return (Bytes.to_list buffer |> List.map ~f:Char.to_int)
+  | InvalidFormat s ->
+    Lwt_result.fail @@ Printf.sprintf "Did not receive valid RDB dump from master: %s" s
+  | Disconnected -> Lwt_result.fail "Master did not send RDB dump"
+;;
+
 let close_connection sock = Lwt_unix.close sock

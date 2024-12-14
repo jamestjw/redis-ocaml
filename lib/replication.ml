@@ -16,7 +16,7 @@ let fetch_info { replica_of; replication_id; offset } _ =
   |> String.concat ~sep:"\r\n"
 ;;
 
-let initiate_handshake { replica_of; _ } listening_port =
+let initiate_handshake replica_of listening_port =
   let open Lwt_result.Let_syntax in
   match replica_of with
   | None ->
@@ -24,11 +24,17 @@ let initiate_handshake { replica_of; _ } listening_port =
       Logs_lwt.warn (fun m ->
         m "Initiating handshake without master information, aborting...")
     in
-    Lwt_result.return ()
+    failwith "shouldn't occur"
   | Some (addr, port) ->
-    let%lwt sock, ic, oc = Client.connect_to_server ~host:addr ~port in
+    let%lwt _sock, ic, oc = Client.connect_to_server ~host:addr ~port in
     let%bind () = Client.send_ping (ic, oc) in
     let%bind () = Client.send_replication_config (ic, oc) listening_port in
     let%bind () = Client.initiate_replication_stream (ic, oc) in
-    Lwt_result.ok @@ Client.close_connection sock
+    let%bind bytes = Client.receive_rdb_dump ic in
+    Lwt_result.return bytes
 ;;
+
+(* let load_pdb bytes = *)
+(*   let store = State.rdb_databases_to_store (failwith "add db")  in *)
+(*   { store; configs=StringMap.empty; replication } *)
+(* ;; *)

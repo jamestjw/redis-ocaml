@@ -14,10 +14,15 @@ type t =
   ; replication : replication
   }
 
+(* Either pass bytes or file dir and name *)
+type rdb_source =
+  | RDB_BYTES of int list
+  | RDB_FILE of string * string
+
 let ms_to_ns ms = Int63.(of_int ms * of_int 1_000_000)
 let s_to_ns s = Int63.(of_int s * of_int 1_000_000_000)
 
-let mk_state ~rdb_dir ~rdb_filename ~replica_of =
+let rdb_databases_to_store databases =
   let do_key_value map key value expire_timestamp =
     let open Option.Let_syntax in
     let expire_timestamp =
@@ -39,28 +44,45 @@ let mk_state ~rdb_dir ~rdb_filename ~replica_of =
           expire_timestamp)
       db.kv_pairs
   in
-  let rdb_full_filename = Filename.concat rdb_dir rdb_filename in
+  List.fold ~init:StringMap.empty ~f:do_db databases
+;;
+
+let mk_state ~rdb_source ~replica_of =
+  let rdb_bytes, configs =
+    match rdb_source with
+    | RDB_FILE (rdb_dir, rdb_filename) ->
+      let rdb_full_filename = Filename.concat rdb_dir rdb_filename in
+      (match Sys_unix.file_exists rdb_full_filename with
+       | `No | `Unknown ->
+         Logs.info (fun m ->
+           m
+             "RDB file (%s) does not exist, starting with blank database"
+             rdb_full_filename);
+         ( None
+         , StringMap.empty
+           |> StringMap.add "dir" rdb_dir
+           |> StringMap.add "dbfilename" rdb_filename )
+       | `Yes ->
+         ( Some (Utils.read_all_bytes rdb_full_filename)
+         , StringMap.empty
+           |> StringMap.add "dir" rdb_dir
+           |> StringMap.add "dbfilename" rdb_filename ))
+    | RDB_BYTES bytes -> Some bytes, StringMap.empty
+  in
   let store =
-    match Sys_unix.file_exists rdb_full_filename with
-    | `No | `Unknown ->
-      Logs.info (fun m ->
-        m "RDB file (%s) does not exist, starting with blank database" rdb_full_filename);
-      StringMap.empty
-    | `Yes ->
-      let rdb_bytes = Utils.read_all_bytes rdb_full_filename in
+    match rdb_bytes with
+    | None -> StringMap.empty
+    | Some rdb_bytes ->
       (match Parser.parse_rdb rdb_bytes with
        | Ok pdb ->
-         Logs.info (fun m -> m "RDB file (%s) loaded" rdb_full_filename);
-         List.fold ~init:StringMap.empty ~f:do_db pdb.databases
+         Logs.info (fun m -> m "RDB file loaded");
+         rdb_databases_to_store pdb.databases
        | Error e ->
-         Logs.warn (fun m -> m "Couldn't parse RDB file (%s): %s" rdb_filename e);
+         Logs.warn (fun m -> m "Couldn't parse RDB file: %s" e);
          StringMap.empty)
   in
   { store
-  ; configs =
-      StringMap.empty
-      |> StringMap.add "dir" rdb_dir
-      |> StringMap.add "dbfilename" rdb_filename
+  ; configs
   ; replication =
       { replica_of
       ; replication_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
