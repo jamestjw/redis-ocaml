@@ -33,10 +33,12 @@ let cmd_to_str cmd =
   Response.(serialize @@ ARRAY args)
 ;;
 
-let send_request oc cmd =
-  let%lwt _ = Lwt_io.write oc (cmd_to_str cmd) in
+let send_string oc str =
+  let%lwt _ = Lwt_io.write oc str in
   Lwt.return_unit
 ;;
+
+let send_request oc cmd = send_string oc @@ cmd_to_str cmd
 
 let send_ping (ic, oc) =
   let%lwt () = send_request oc Cmd.PING in

@@ -1,6 +1,8 @@
 open Core
 open State
 
+let default_empty_rdb_file = "data/empty.rdb"
+
 type t = { mailbox : (Cmd.t * Response.t Lwt_mvar.t) Lwt_mvar.t }
 
 let mk () = { mailbox = Lwt_mvar.create_empty () }
@@ -67,7 +69,8 @@ let handle_message cmd ({ replication; _ } as state) =
   | Cmd.REPL_CONF_CAPA _ -> Response.SIMPLE "OK", state
   (* TODO: complete this *)
   | Cmd.PSYNC _ ->
-    Response.SIMPLE (Printf.sprintf "FULLRESYNC %s 0" replication.replication_id), state
+    let rdb_contents = In_channel.read_all default_empty_rdb_file in
+    Response.FULL_RESYNC (replication.replication_id, rdb_contents), state
   | Cmd.INVALID s -> Response.ERR s, state
 ;;
 

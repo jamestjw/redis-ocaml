@@ -27,8 +27,8 @@ let initiate_handshake { replica_of; _ } listening_port =
     Lwt_result.return ()
   | Some (addr, port) ->
     let%lwt sock, ic, oc = Client.connect_to_server ~host:addr ~port in
-    let%bind _ = Client.send_ping (ic, oc) in
-    let%bind _ = Client.send_replication_config (ic, oc) listening_port in
-    let%bind _ = Client.initiate_replication_stream (ic, oc) in
+    let%bind () = Client.send_ping (ic, oc) in
+    let%bind () = Client.send_replication_config (ic, oc) listening_port in
+    let%bind () = Client.initiate_replication_stream (ic, oc) in
     Lwt_result.ok @@ Client.close_connection sock
 ;;
