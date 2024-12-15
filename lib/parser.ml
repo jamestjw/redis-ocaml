@@ -42,6 +42,13 @@ let parse_set_cmd = function
   | _ -> Cmd.INVALID "invalid args for set, key-value pair required"
 ;;
 
+let parse_master_set_cmd args =
+  match parse_set_cmd args with
+  | Cmd.SET { set_key; set_value; set_timeout } ->
+    Cmd.MASTER_SET { set_key; set_value; set_timeout }
+  | cmd -> cmd
+;;
+
 let parse_ping_cmd = function
   | [] -> Cmd.PING
   | _ -> Cmd.INVALID "'PING' takes no args"
@@ -190,6 +197,19 @@ let parse_simple ic =
 let get_cmd ic =
   let%lwt args = parse_resp_array ic in
   match args with
+  | None -> return None
+  | Some [] -> return @@ Some (Cmd.INVALID "missing or malformed command")
+  | Some args -> return @@ Some (args_to_cmd args)
+;;
+
+let get_master_cmd ic =
+  let args_to_cmd args =
+    match lower_fst args with
+    | "set" :: args -> parse_master_set_cmd args
+    | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised master command %s" cmd)
+    | _ -> Cmd.INVALID "invalid master command"
+  in
+  match%lwt parse_resp_array ic with
   | None -> return None
   | Some [] -> return @@ Some (Cmd.INVALID "missing or malformed command")
   | Some args -> return @@ Some (args_to_cmd args)

@@ -13,7 +13,7 @@ let rec handle_connection ic oc server () =
   match cmd with
   | Some cmd ->
     let%lwt _ = Logs_lwt.info (fun m -> m "Received command %s" @@ Cmd.show cmd) in
-    let%lwt resp = Server.execute_cmd cmd server in
+    let%lwt resp = Server.execute_cmd (cmd, ic, oc) server in
     Lwt_io.write oc (Response.serialize resp) >>= handle_connection ic oc server
   | None -> Logs_lwt.debug (fun m -> m "Connection closed")
 ;;
@@ -41,10 +41,21 @@ let create_server_socket ~address ~port ~backlog =
 let create_server ~sock ~rdb_dir ~rdb_filename ~replica_of ~listening_port =
   let server = Server.mk () in
   let rec loop () = Lwt_unix.accept sock >>= accept_connection server >>= loop in
+  let run () =
+    let%lwt rdb_source =
+      match replica_of with
+      | None -> Lwt.return @@ State.RDB_FILE (rdb_dir, rdb_filename)
+      | Some _ ->
+        (match%lwt Replication.initiate_handshake replica_of listening_port with
+         | Ok (rdb_bytes, ic, oc) ->
+           Lwt.async (fun _ -> Replication.listen_for_replication ic oc server);
+           Lwt.return @@ State.RDB_BYTES rdb_bytes
+         | Error e -> Printf.failwithf "Did not manage to get dump from master: %s" e ())
+    in
+    Server.run server ~rdb_source ~replica_of
+  in
   let start () =
-    Lwt.on_failure
-      (Server.run server ~rdb_dir ~rdb_filename ~replica_of ~listening_port)
-      (fun e -> Logs.err (fun m -> m "%s" (Exn.to_string e)));
+    Lwt.on_failure (run ()) (fun e -> Logs.err (fun m -> m "%s" (Exn.to_string e)));
     loop ()
   in
   start

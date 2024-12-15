@@ -28,6 +28,14 @@ let cmd_to_str cmd =
       list_to_bulk [ "REPLCONF"; "listening-port"; string_of_int port ]
     | Cmd.REPL_CONF_CAPA capabilities -> list_to_bulk [ "REPLCONF"; "capa"; capabilities ]
     | Cmd.PSYNC (id, offset) -> list_to_bulk [ "PSYNC"; id; string_of_int offset ]
+    | Cmd.SET { set_key; set_value; set_timeout } ->
+      let timeout =
+        match set_timeout with
+        | None -> []
+        | Some (PX i) -> [ "px"; string_of_int i ]
+        | Some (EX i) -> [ "ex"; string_of_int i ]
+      in
+      list_to_bulk @@ [ "SET"; set_key; set_value ] @ timeout
     | _ -> failwith "not implemented yet"
   in
   Response.(serialize @@ ARRAY args)
@@ -103,6 +111,14 @@ let receive_rdb_dump ic =
   | InvalidFormat s ->
     Lwt_result.fail @@ Printf.sprintf "Did not receive valid RDB dump from master: %s" s
   | Disconnected -> Lwt_result.fail "Master did not send RDB dump"
+;;
+
+let propagate_set (_ic, oc) set_cmd =
+  match set_cmd with
+  | Cmd.SET _ ->
+    let%lwt () = send_request oc @@ set_cmd in
+    Lwt.return_unit
+  | _ -> failwith "must be called with a SET command"
 ;;
 
 let close_connection sock = Lwt_unix.close sock

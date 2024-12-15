@@ -1,20 +1,4 @@
 open Core
-open State
-
-let fetch_info { replica_of; replication_id; offset } _ =
-  let kv_pairs =
-    match replica_of with
-    | None ->
-      [ "role", "master"
-      ; "master_replid", replication_id
-      ; "master_repl_offset", string_of_int offset
-      ]
-    | Some _ -> [ "role", "slave" ]
-  in
-  kv_pairs
-  |> List.map ~f:(fun (k, v) -> Printf.sprintf "%s:%s" k v)
-  |> String.concat ~sep:"\r\n"
-;;
 
 let initiate_handshake replica_of listening_port =
   let open Lwt_result.Let_syntax in
@@ -31,10 +15,21 @@ let initiate_handshake replica_of listening_port =
     let%bind () = Client.send_replication_config (ic, oc) listening_port in
     let%bind () = Client.initiate_replication_stream (ic, oc) in
     let%bind bytes = Client.receive_rdb_dump ic in
-    Lwt_result.return bytes
+    Lwt_result.return (bytes, ic, oc)
 ;;
 
-(* let load_pdb bytes = *)
-(*   let store = State.rdb_databases_to_store (failwith "add db")  in *)
-(*   { store; configs=StringMap.empty; replication } *)
-(* ;; *)
+let listen_for_replication ic oc server =
+  let open Lwt in
+  let rec run () =
+    let%lwt cmd = Parser.get_master_cmd ic in
+    match cmd with
+    | Some cmd ->
+      let%lwt _ =
+        Logs_lwt.info (fun m -> m "Received command %s from master" @@ Cmd.show cmd)
+      in
+      let%lwt resp = Server.execute_cmd (cmd, ic, oc) server in
+      Lwt_io.write oc (Response.serialize resp) >>= run
+    | None -> Logs_lwt.debug (fun m -> m "Connection closed")
+  in
+  Logs_lwt.info (fun m -> m "Listening for replication") >>= run
+;;

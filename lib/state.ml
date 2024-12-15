@@ -2,10 +2,12 @@ open Core
 module StringMap = Utils.StringMap
 
 type replication =
-  { replica_of : (string * int) option
-  ; replication_id : string
-  ; offset : int
-  }
+  | REPLICA of { replica_of : string * int }
+  | MASTER of
+      { replication_id : string
+      ; offset : int
+      ; replicas : (Lwt_io.input_channel * Lwt_io.output_channel) list
+      }
 
 type t =
   { (* Storing the expiry in nanoseconds *)
@@ -81,12 +83,15 @@ let mk_state ~rdb_source ~replica_of =
          Logs.warn (fun m -> m "Couldn't parse RDB file: %s" e);
          StringMap.empty)
   in
-  { store
-  ; configs
-  ; replication =
-      { replica_of
-      ; replication_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
-      ; offset = 0
-      }
-  }
+  let replication =
+    match replica_of with
+    | Some replica_of -> REPLICA { replica_of }
+    | None ->
+      MASTER
+        { replication_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
+        ; offset = 0
+        ; replicas = []
+        }
+  in
+  { store; configs; replication }
 ;;

@@ -3,7 +3,11 @@ open State
 
 let default_empty_rdb_file = "data/empty.rdb"
 
-type t = { mailbox : (Cmd.t * Response.t Lwt_mvar.t) Lwt_mvar.t }
+type t =
+  { mailbox :
+      ((Cmd.t * Lwt_io.input_channel * Lwt_io.output_channel) * Response.t Lwt_mvar.t)
+        Lwt_mvar.t
+  }
 
 let mk () = { mailbox = Lwt_mvar.create_empty () }
 
@@ -27,7 +31,30 @@ let get_keys { store; _ } =
 
 let get_config { configs; _ } key = StringMap.find_opt key configs
 
-let handle_message cmd ({ replication; _ } as state) =
+let fetch_replication_info replication _ =
+  let kv_pairs =
+    match replication with
+    | MASTER { replication_id; offset; _ } ->
+      [ "role", "master"
+      ; "master_replid", replication_id
+      ; "master_repl_offset", string_of_int offset
+      ]
+    | REPLICA _ -> [ "role", "slave" ]
+  in
+  kv_pairs
+  |> List.map ~f:(fun (k, v) -> Printf.sprintf "%s:%s" k v)
+  |> String.concat ~sep:"\r\n"
+;;
+
+let timeout_to_int = function
+  | None -> None
+  | Some (Cmd.PX ms) ->
+    Some Int63.(Time_now.nanoseconds_since_unix_epoch () + ms_to_ns ms)
+  | Some (Cmd.EX secs) ->
+    Some Int63.(Time_now.nanoseconds_since_unix_epoch () + s_to_ns secs)
+;;
+
+let handle_message (cmd, client_ic, client_oc) ({ replication; _ } as state) =
   match cmd with
   | Cmd.PING -> Response.SIMPLE "PONG", state
   | Cmd.ECHO s -> Response.BULK s, state
@@ -39,15 +66,14 @@ let handle_message cmd ({ replication; _ } as state) =
     in
     res, state
   | Cmd.SET { set_key; set_value; set_timeout } ->
-    let expiry =
-      match set_timeout with
-      | None -> None
-      | Some (PX ms) ->
-        Some Int63.(Time_now.nanoseconds_since_unix_epoch () + ms_to_ns ms)
-      | Some (EX secs) ->
-        Some Int63.(Time_now.nanoseconds_since_unix_epoch () + s_to_ns secs)
-    in
-    Response.SIMPLE "OK", set state set_key set_value expiry
+    (match replication with
+     | REPLICA _ -> Response.ERR "cannot set on replica", state
+     | MASTER { replicas; _ } ->
+       Lwt.async (fun () ->
+         Lwt_list.iter_p (fun (ic, oc) -> Client.propagate_set (ic, oc) cmd) replicas);
+       Response.SIMPLE "OK", set state set_key set_value (timeout_to_int set_timeout))
+  | Cmd.MASTER_SET { set_key; set_value; set_timeout } ->
+    Response.QUIET, set state set_key set_value (timeout_to_int set_timeout)
   | Cmd.GET_CONFIG keys ->
     let res =
       List.map ~f:(fun k -> get_config state k |> Option.map ~f:(fun v -> [ k; v ])) keys
@@ -63,38 +89,37 @@ let handle_message cmd ({ replication; _ } as state) =
       |> List.filter_map ~f:(fun e -> if matcher e then Some (Response.BULK e) else None)
     in
     Response.ARRAY keys, state
-  | Cmd.INFO args -> Response.BULK (Replication.fetch_info replication args), state
+  | Cmd.INFO args -> Response.BULK (fetch_replication_info replication args), state
   (* TODO: actually do something with these two *)
   | Cmd.REPL_CONF_PORT _ -> Response.SIMPLE "OK", state
   | Cmd.REPL_CONF_CAPA _ -> Response.SIMPLE "OK", state
   (* TODO: complete this *)
   | Cmd.PSYNC _ ->
-    let rdb_contents = In_channel.read_all default_empty_rdb_file in
-    Response.FULL_RESYNC (replication.replication_id, rdb_contents), state
+    (match replication with
+     | MASTER ({ replication_id; replicas; _ } as master) ->
+       let rdb_contents = In_channel.read_all default_empty_rdb_file in
+       ( Response.FULL_RESYNC (replication_id, rdb_contents)
+       , { state with
+           replication =
+             MASTER { master with replicas = (client_ic, client_oc) :: replicas }
+         } )
+     | REPLICA _ -> Response.ERR "'PSYNC' not supported by replicas", state)
   | Cmd.INVALID s -> Response.ERR s, state
 ;;
 
-let run { mailbox } ~rdb_dir ~rdb_filename ~replica_of ~listening_port =
+let run { mailbox } ~rdb_source ~replica_of =
   let rec inner context =
     let%lwt cmd, response_mailbox = Lwt_mvar.take mailbox in
     let resp, context = handle_message cmd context in
     Lwt.async (fun _ -> Lwt_mvar.put response_mailbox resp);
     inner context
   in
-  let%lwt rdb_source =
-    match replica_of with
-    | None -> Lwt.return @@ State.RDB_FILE (rdb_dir, rdb_filename)
-    | Some _ ->
-      (match%lwt Replication.initiate_handshake replica_of listening_port with
-       | Ok rdb_bytes -> Lwt.return @@ State.RDB_BYTES rdb_bytes
-       | Error e -> Printf.failwithf "Did not manage to get dump from master: %s" e ())
-  in
   let state = mk_state ~rdb_source ~replica_of in
   inner state
 ;;
 
-let execute_cmd cmd { mailbox } =
+let execute_cmd (cmd, ic, oc) { mailbox } =
   let response_mailbox = Lwt_mvar.create_empty () in
-  let%lwt _ = Lwt_mvar.put mailbox (cmd, response_mailbox) in
+  let%lwt _ = Lwt_mvar.put mailbox ((cmd, ic, oc), response_mailbox) in
   Lwt_mvar.take response_mailbox
 ;;

@@ -19,4 +19,9 @@ type t =
   | REPL_CONF_CAPA of string (* replication capabilities *)
   | PSYNC of string * int
   | INVALID of string
+  | MASTER_SET of
+      { set_key : string
+      ; set_value : string
+      ; set_timeout : set_timeout option
+      }
 [@@deriving show { with_path = false }]
