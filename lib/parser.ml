@@ -86,6 +86,7 @@ let parse_replconf_cmd args =
      | Some port -> Cmd.REPL_CONF_PORT port
      | None -> Cmd.INVALID "'REPLCONF' listening port isn't a valid integer")
   | [ "capa"; capa ] -> Cmd.REPL_CONF_CAPA capa
+  | [ "getack"; query ] -> Cmd.REPL_CONF_GET_ACK query
   | _ -> Cmd.INVALID "'KEYS' takes one arg"
 ;;
 
@@ -206,6 +207,7 @@ let get_master_cmd ic =
   let args_to_cmd args =
     match lower_fst args with
     | "set" :: args -> parse_master_set_cmd args
+    | "replconf" :: args -> parse_replconf_cmd args
     | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised master command %s" cmd)
     | _ -> Cmd.INVALID "invalid master command"
   in

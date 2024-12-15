@@ -93,6 +93,8 @@ let handle_message (cmd, client_ic, client_oc) ({ replication; _ } as state) =
   (* TODO: actually do something with these two *)
   | Cmd.REPL_CONF_PORT _ -> Response.SIMPLE "OK", state
   | Cmd.REPL_CONF_CAPA _ -> Response.SIMPLE "OK", state
+  | Cmd.REPL_CONF_GET_ACK _ ->
+    Response.strs_to_bulk_array [ "REPLCONF"; "ACK"; "0" ], state
   (* TODO: complete this *)
   | Cmd.PSYNC _ ->
     (match replication with
@@ -107,9 +109,14 @@ let handle_message (cmd, client_ic, client_oc) ({ replication; _ } as state) =
   | Cmd.INVALID s -> Response.ERR s, state
 ;;
 
+(* | cmd -> *)
+(*   Response.ERR (Printf.sprintf "%s command is not supported" @@ Cmd.show cmd), state *)
+
 let run { mailbox } ~rdb_source ~replica_of =
   let rec inner context =
     let%lwt cmd, response_mailbox = Lwt_mvar.take mailbox in
+    (* TODO: use a different handle message function depending on whether we are
+       a master or replica node *)
     let resp, context = handle_message cmd context in
     Lwt.async (fun _ -> Lwt_mvar.put response_mailbox resp);
     inner context

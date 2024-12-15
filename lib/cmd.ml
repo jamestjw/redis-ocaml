@@ -17,6 +17,7 @@ type t =
   | INFO of string list
   | REPL_CONF_PORT of int
   | REPL_CONF_CAPA of string (* replication capabilities *)
+  | REPL_CONF_GET_ACK of string
   | PSYNC of string * int
   | INVALID of string
   | MASTER_SET of

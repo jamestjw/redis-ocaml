@@ -27,3 +27,5 @@ let rec serialize = function
       contents
   | QUIET -> ""
 ;;
+
+let strs_to_bulk_array strs = ARRAY (List.map ~f:(fun e -> BULK e) strs)

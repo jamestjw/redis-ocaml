@@ -48,7 +48,7 @@ let create_server ~sock ~rdb_dir ~rdb_filename ~replica_of ~listening_port =
       | Some _ ->
         (match%lwt Replication.initiate_handshake replica_of listening_port with
          | Ok (rdb_bytes, ic, oc) ->
-           Lwt.async (fun _ -> Replication.listen_for_replication ic oc server);
+           Lwt.async (fun _ -> Replication.listen_for_updates ic oc server);
            Lwt.return @@ State.RDB_BYTES rdb_bytes
          | Error e -> Printf.failwithf "Did not manage to get dump from master: %s" e ())
     in

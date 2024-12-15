@@ -18,7 +18,7 @@ let initiate_handshake replica_of listening_port =
     Lwt_result.return (bytes, ic, oc)
 ;;
 
-let listen_for_replication ic oc server =
+let listen_for_updates ic oc server =
   let open Lwt in
   let rec run () =
     let%lwt cmd = Parser.get_master_cmd ic in

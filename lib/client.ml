@@ -20,14 +20,15 @@ let connect_to_server ~host ~port =
 ;;
 
 let cmd_to_str cmd =
-  let list_to_bulk = List.map ~f:(fun e -> Response.BULK e) in
-  let args =
+  let arr =
     match cmd with
-    | Cmd.PING -> list_to_bulk [ "PING" ]
+    | Cmd.PING -> Response.strs_to_bulk_array [ "PING" ]
     | Cmd.REPL_CONF_PORT port ->
-      list_to_bulk [ "REPLCONF"; "listening-port"; string_of_int port ]
-    | Cmd.REPL_CONF_CAPA capabilities -> list_to_bulk [ "REPLCONF"; "capa"; capabilities ]
-    | Cmd.PSYNC (id, offset) -> list_to_bulk [ "PSYNC"; id; string_of_int offset ]
+      Response.strs_to_bulk_array [ "REPLCONF"; "listening-port"; string_of_int port ]
+    | Cmd.REPL_CONF_CAPA capabilities ->
+      Response.strs_to_bulk_array [ "REPLCONF"; "capa"; capabilities ]
+    | Cmd.PSYNC (id, offset) ->
+      Response.strs_to_bulk_array [ "PSYNC"; id; string_of_int offset ]
     | Cmd.SET { set_key; set_value; set_timeout } ->
       let timeout =
         match set_timeout with
@@ -35,10 +36,10 @@ let cmd_to_str cmd =
         | Some (PX i) -> [ "px"; string_of_int i ]
         | Some (EX i) -> [ "ex"; string_of_int i ]
       in
-      list_to_bulk @@ [ "SET"; set_key; set_value ] @ timeout
+      Response.strs_to_bulk_array @@ [ "SET"; set_key; set_value ] @ timeout
     | _ -> failwith "not implemented yet"
   in
-  Response.(serialize @@ ARRAY args)
+  Response.serialize arr
 ;;
 
 let send_string oc str =
