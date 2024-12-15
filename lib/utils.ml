@@ -10,3 +10,10 @@ let read_all_bytes filename =
   in
   read_all []
 ;;
+
+(* TODO: don't blindly assume that we got a carriage return, or if there
+   was a newline at all *)
+let read_line_with_length_opt ic =
+  let%lwt msg = Lwt_io.read_line_opt ic in
+  Lwt.return @@ Option.map msg ~f:(fun msg -> msg, String.length msg + 2)
+;;

@@ -5,6 +5,7 @@ type set_timeout =
 
 type t =
   | PING
+  | MASTER_PING
   | ECHO of string
   | GET of string
   | SET of

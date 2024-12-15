@@ -105,7 +105,7 @@ let initiate_replication_stream (ic, oc) =
 let receive_rdb_dump ic =
   let%lwt _ = Logs_lwt.info (fun m -> m "Waiting for RDB dump") in
   match%lwt Parser.parse_bulk_string_len ic with
-  | Parsed num_bytes ->
+  | Parsed (num_bytes, _) ->
     let buffer = Bytes.create num_bytes in
     let%lwt _ = Lwt_io.read_into_exactly ic buffer 0 num_bytes in
     Lwt_result.return (Bytes.to_list buffer |> List.map ~f:Char.to_int)

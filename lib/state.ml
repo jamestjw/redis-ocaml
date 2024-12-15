@@ -2,7 +2,10 @@ open Core
 module StringMap = Utils.StringMap
 
 type replication =
-  | REPLICA of { replica_of : string * int }
+  | REPLICA of
+      { replica_of : string * int
+      ; offset : int
+      }
   | MASTER of
       { replication_id : string
       ; offset : int
@@ -85,7 +88,7 @@ let mk_state ~rdb_source ~replica_of =
   in
   let replication =
     match replica_of with
-    | Some replica_of -> REPLICA { replica_of }
+    | Some replica_of -> REPLICA { replica_of; offset = 0 }
     | None ->
       MASTER
         { replication_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
@@ -94,4 +97,19 @@ let mk_state ~rdb_source ~replica_of =
         }
   in
   { store; configs; replication }
+;;
+
+let get_replication_offset { replication; _ } =
+  match replication with
+  | MASTER { offset; _ } -> offset
+  | REPLICA { offset; _ } -> offset
+;;
+
+let incr_replication_offset ({ replication; _ } as state) delta =
+  let replication =
+    match replication with
+    | MASTER ({ offset; _ } as rest) -> MASTER { rest with offset = offset + delta }
+    | REPLICA ({ offset; _ } as rest) -> REPLICA { rest with offset = offset + delta }
+  in
+  { state with replication }
 ;;

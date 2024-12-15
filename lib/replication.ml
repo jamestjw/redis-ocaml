@@ -21,13 +21,13 @@ let initiate_handshake replica_of listening_port =
 let listen_for_updates ic oc server =
   let open Lwt in
   let rec run () =
-    let%lwt cmd = Parser.get_master_cmd ic in
-    match cmd with
-    | Some cmd ->
+    match%lwt Parser.get_master_cmd ic with
+    (* TODO: replica needs to save bytes read *)
+    | Some (cmd, bytes_read) ->
       let%lwt _ =
         Logs_lwt.info (fun m -> m "Received command %s from master" @@ Cmd.show cmd)
       in
-      let%lwt resp = Server.execute_cmd (cmd, ic, oc) server in
+      let%lwt resp = Server.execute_cmd (cmd, bytes_read, ic, oc) server in
       Lwt_io.write oc (Response.serialize resp) >>= run
     | None -> Logs_lwt.debug (fun m -> m "Connection closed")
   in

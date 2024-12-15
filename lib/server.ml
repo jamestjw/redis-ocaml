@@ -3,9 +3,11 @@ open State
 
 let default_empty_rdb_file = "data/empty.rdb"
 
+(* TODO: build a new request type for the product *)
 type t =
   { mailbox :
-      ((Cmd.t * Lwt_io.input_channel * Lwt_io.output_channel) * Response.t Lwt_mvar.t)
+      ((Cmd.t * int * Lwt_io.input_channel * Lwt_io.output_channel)
+      * Response.t Lwt_mvar.t)
         Lwt_mvar.t
   }
 
@@ -54,9 +56,8 @@ let timeout_to_int = function
     Some Int63.(Time_now.nanoseconds_since_unix_epoch () + s_to_ns secs)
 ;;
 
-let handle_message (cmd, client_ic, client_oc) ({ replication; _ } as state) =
+let handle_message_generic (cmd, _client_ic, _client_oc) ({ replication; _ } as state) =
   match cmd with
-  | Cmd.PING -> Response.SIMPLE "PONG", state
   | Cmd.ECHO s -> Response.BULK s, state
   | Cmd.GET k ->
     let res =
@@ -65,15 +66,6 @@ let handle_message (cmd, client_ic, client_oc) ({ replication; _ } as state) =
       | Some v -> Response.BULK v
     in
     res, state
-  | Cmd.SET { set_key; set_value; set_timeout } ->
-    (match replication with
-     | REPLICA _ -> Response.ERR "cannot set on replica", state
-     | MASTER { replicas; _ } ->
-       Lwt.async (fun () ->
-         Lwt_list.iter_p (fun (ic, oc) -> Client.propagate_set (ic, oc) cmd) replicas);
-       Response.SIMPLE "OK", set state set_key set_value (timeout_to_int set_timeout))
-  | Cmd.MASTER_SET { set_key; set_value; set_timeout } ->
-    Response.QUIET, set state set_key set_value (timeout_to_int set_timeout)
   | Cmd.GET_CONFIG keys ->
     let res =
       List.map ~f:(fun k -> get_config state k |> Option.map ~f:(fun v -> [ k; v ])) keys
@@ -90,11 +82,53 @@ let handle_message (cmd, client_ic, client_oc) ({ replication; _ } as state) =
     in
     Response.ARRAY keys, state
   | Cmd.INFO args -> Response.BULK (fetch_replication_info replication args), state
+  | Cmd.INVALID s -> Response.ERR s, state
+  | cmd ->
+    Response.ERR (Printf.sprintf "%s command is not supported" @@ Cmd.show cmd), state
+;;
+
+let handle_message_for_replica (cmd, num_bytes, client_ic, client_oc) state =
+  let res, state =
+    match cmd with
+    | Cmd.PING -> Response.SIMPLE "PONG", state
+    | Cmd.MASTER_PING -> Response.QUIET, state
+    | Cmd.MASTER_SET { set_key; set_value; set_timeout } ->
+      Response.QUIET, set state set_key set_value (timeout_to_int set_timeout)
+    | Cmd.REPL_CONF_GET_ACK _ ->
+      (* TODO: return the right thing *)
+      ( Response.strs_to_bulk_array
+          [ "REPLCONF"; "ACK"; string_of_int @@ State.get_replication_offset state ]
+      , state )
+    | Cmd.INVALID s -> Response.ERR s, state
+    | other -> handle_message_generic (other, client_ic, client_oc) state
+  in
+  res, State.incr_replication_offset state num_bytes
+;;
+
+let handle_message_for_master
+  (cmd, _num_bytes, client_ic, client_oc)
+  ({ replication; _ } as state)
+  =
+  match cmd with
+  | Cmd.PING -> Response.SIMPLE "PONG", state
+  | Cmd.SET { set_key; set_value; set_timeout } ->
+    (match replication with
+     | REPLICA _ -> failwith "impossible"
+     | MASTER { replicas; _ } ->
+       Lwt.async (fun () ->
+         Lwt_list.iter_p (fun (ic, oc) -> Client.propagate_set (ic, oc) cmd) replicas);
+       Response.SIMPLE "OK", set state set_key set_value (timeout_to_int set_timeout))
+  | Cmd.GET_CONFIG keys ->
+    let res =
+      List.map ~f:(fun k -> get_config state k |> Option.map ~f:(fun v -> [ k; v ])) keys
+      |> List.filter_map ~f:(fun x -> x)
+      |> Stdlib.List.flatten
+      |> List.map ~f:(fun e -> Response.BULK e)
+    in
+    Response.ARRAY res, state
   (* TODO: actually do something with these two *)
   | Cmd.REPL_CONF_PORT _ -> Response.SIMPLE "OK", state
   | Cmd.REPL_CONF_CAPA _ -> Response.SIMPLE "OK", state
-  | Cmd.REPL_CONF_GET_ACK _ ->
-    Response.strs_to_bulk_array [ "REPLCONF"; "ACK"; "0" ], state
   (* TODO: complete this *)
   | Cmd.PSYNC _ ->
     (match replication with
@@ -105,14 +139,17 @@ let handle_message (cmd, client_ic, client_oc) ({ replication; _ } as state) =
            replication =
              MASTER { master with replicas = (client_ic, client_oc) :: replicas }
          } )
-     | REPLICA _ -> Response.ERR "'PSYNC' not supported by replicas", state)
+     | REPLICA _ -> failwith "impossible")
   | Cmd.INVALID s -> Response.ERR s, state
+  | other -> handle_message_generic (other, client_ic, client_oc) state
 ;;
 
-(* | cmd -> *)
-(*   Response.ERR (Printf.sprintf "%s command is not supported" @@ Cmd.show cmd), state *)
-
 let run { mailbox } ~rdb_source ~replica_of =
+  let handle_message =
+    if Option.is_some replica_of
+    then handle_message_for_replica
+    else handle_message_for_master
+  in
   let rec inner context =
     let%lwt cmd, response_mailbox = Lwt_mvar.take mailbox in
     (* TODO: use a different handle message function depending on whether we are
@@ -125,8 +162,8 @@ let run { mailbox } ~rdb_source ~replica_of =
   inner state
 ;;
 
-let execute_cmd (cmd, ic, oc) { mailbox } =
+let execute_cmd (cmd, num_bytes, ic, oc) { mailbox } =
   let response_mailbox = Lwt_mvar.create_empty () in
-  let%lwt _ = Lwt_mvar.put mailbox ((cmd, ic, oc), response_mailbox) in
+  let%lwt _ = Lwt_mvar.put mailbox ((cmd, num_bytes, ic, oc), response_mailbox) in
   Lwt_mvar.take response_mailbox
 ;;

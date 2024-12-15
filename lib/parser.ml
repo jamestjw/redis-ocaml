@@ -115,12 +115,11 @@ let args_to_cmd args =
 ;;
 
 let parse_len regexp ic =
-  let%lwt msg = Lwt_io.read_line_opt ic in
-  match msg with
+  match%lwt Utils.read_line_with_length_opt ic with
   | None -> return Disconnected
-  | Some msg ->
+  | Some (msg, bytes_read) ->
     if Str.string_match regexp msg 0
-    then return @@ Parsed (Stdlib.int_of_string @@ Str.matched_group 1 msg)
+    then return @@ Parsed (Stdlib.int_of_string @@ Str.matched_group 1 msg, bytes_read)
     else return @@ InvalidFormat msg
 ;;
 
@@ -133,56 +132,55 @@ let parse_bulk_string ic =
   | InvalidFormat s ->
     let%lwt _ = Logs_lwt.err (fun m -> m "Received malformed length %s" s) in
     return (InvalidFormat s)
-  | Parsed arg_len ->
-    (match%lwt Lwt_io.read_line_opt ic with
+  | Parsed (arg_len, len_bytes_read) ->
+    (match%lwt Utils.read_line_with_length_opt ic with
      | None -> return Disconnected
-     | Some arg when String.length arg <> arg_len ->
+     | Some (arg, _) when String.length arg <> arg_len ->
        let%lwt _ = Logs_lwt.err (fun m -> m "Argument (%s) length != %d" arg arg_len) in
        return @@ InvalidFormat arg
-     | Some arg -> return @@ Parsed arg)
+     | Some (arg, bytes_read) -> return @@ Parsed (arg, len_bytes_read + bytes_read))
 ;;
 
 (* Polls the input channel for a valid command, if this returns None this
    means that the connection has been dropped by the client. *)
 let parse_resp_array ic =
   let parse_bulk_strings count =
-    let rec parse_bulk_strings' count acc =
+    let rec parse_bulk_strings' count acc total_num_bytes =
       if count = 0
-      then return @@ Parsed (List.rev acc)
+      then return @@ Parsed (List.rev acc, total_num_bytes)
       else (
         match%lwt parse_bulk_string ic with
         | Disconnected -> return Disconnected
         | InvalidFormat s ->
           let%lwt _ = Logs_lwt.err (fun m -> m "Couldn't parse string in array: %s" s) in
           return (InvalidFormat s)
-        | Parsed str -> parse_bulk_strings' (count - 1) (str :: acc))
+        | Parsed (str, num_bytes) ->
+          parse_bulk_strings' (count - 1) (str :: acc) (total_num_bytes + num_bytes))
     in
-    parse_bulk_strings' count []
+    parse_bulk_strings' count [] 0
   in
-  let%lwt num_args = parse_array_len ic in
-  match num_args with
+  match%lwt parse_array_len ic with
   | Disconnected -> return None
   | InvalidFormat s ->
     let%lwt _ = Logs_lwt.err (fun m -> m "Received malformed length %s" s) in
-    return @@ Some []
-  | Parsed num_args when num_args <= 0 ->
+    return @@ Some ([], 0)
+  | Parsed (num_args, len_bytes_read) when num_args <= 0 ->
     let%lwt _ =
       Logs_lwt.err (fun m -> m "Length %d of array is not greater than zero" num_args)
     in
-    return @@ Some []
-  | Parsed num_args ->
-    let%lwt arg_list = parse_bulk_strings num_args in
-    (match arg_list with
+    return @@ Some ([], len_bytes_read)
+  | Parsed (num_args, len_bytes_read) ->
+    (match%lwt parse_bulk_strings num_args with
      | Disconnected -> return None
      | InvalidFormat s ->
        let%lwt _ = Logs_lwt.err (fun m -> m "Invalid command format %s" s) in
-       return @@ Some []
-     | Parsed arg_list -> return @@ Some arg_list)
+       return @@ Some ([], len_bytes_read)
+     | Parsed (arg_list, array_bytes_read) ->
+       return @@ Some (arg_list, len_bytes_read + array_bytes_read))
 ;;
 
 let parse_simple ic =
-  let%lwt msg = Lwt_io.read_line_opt ic in
-  match msg with
+  match%lwt Lwt_io.read_line_opt ic with
   | None -> return Disconnected
   | Some msg ->
     if Str.string_match simple_regex msg 0
@@ -196,11 +194,11 @@ let parse_simple ic =
 ;;
 
 let get_cmd ic =
-  let%lwt args = parse_resp_array ic in
-  match args with
+  match%lwt parse_resp_array ic with
   | None -> return None
-  | Some [] -> return @@ Some (Cmd.INVALID "missing or malformed command")
-  | Some args -> return @@ Some (args_to_cmd args)
+  | Some ([], bytes_read) ->
+    return @@ Some (Cmd.INVALID "missing or malformed command", bytes_read)
+  | Some (args, bytes_read) -> return @@ Some (args_to_cmd args, bytes_read)
 ;;
 
 let get_master_cmd ic =
@@ -208,13 +206,15 @@ let get_master_cmd ic =
     match lower_fst args with
     | "set" :: args -> parse_master_set_cmd args
     | "replconf" :: args -> parse_replconf_cmd args
+    | "ping" :: [] -> Cmd.MASTER_PING
     | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised master command %s" cmd)
     | _ -> Cmd.INVALID "invalid master command"
   in
   match%lwt parse_resp_array ic with
   | None -> return None
-  | Some [] -> return @@ Some (Cmd.INVALID "missing or malformed command")
-  | Some args -> return @@ Some (args_to_cmd args)
+  | Some ([], bytes_read) ->
+    return @@ Some (Cmd.INVALID "missing or malformed command", bytes_read)
+  | Some (args, bytes_read) -> return @@ Some (args_to_cmd args, bytes_read)
 ;;
 
 (* RDB file, parsed based on the specs in https://rdb.fnordig.de/file_format.html *)
