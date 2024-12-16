@@ -1,4 +1,5 @@
 open Core
+open Lwt
 module StringMap = Stdlib.Map.Make (String)
 
 let read_all_bytes filename =
@@ -17,3 +18,6 @@ let read_line_with_length_opt ic =
   let%lwt msg = Lwt_io.read_line_opt ic in
   Lwt.return @@ Option.map msg ~f:(fun msg -> msg, String.length msg + 2)
 ;;
+
+(* TODO: is it better to sleep with Float.infinity? *)
+let rec forever () = Lwt_unix.sleep 0.5 >>= forever

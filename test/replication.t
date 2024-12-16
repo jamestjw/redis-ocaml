@@ -24,6 +24,7 @@ Start replica:
   redis_ocaml_server: [INFO] Waiting for RDB dump
   redis_ocaml_server: [INFO] Listening for replication
   redis_ocaml_server: [INFO] RDB file loaded
+  redis_ocaml_server: [INFO] Received command MASTER_PING from master
   redis_ocaml_server: [INFO] Received command (INFO ["replication"])
   redis_ocaml_server: [INFO] Received command MASTER_SET {set_key = "chicken"; set_value = "bbq"; set_timeout = None} from master
   redis_ocaml_server: [INFO] Received command (GET "chicken")

@@ -124,4 +124,9 @@ let propagate_set (_ic, oc) set_cmd =
   | _ -> failwith "must be called with a SET command"
 ;;
 
+let send_ping_no_resp (_ic, oc) =
+  let%lwt () = send_request oc @@ Cmd.PING in
+  Lwt.return_unit
+;;
+
 let close_connection sock = Lwt_unix.close sock

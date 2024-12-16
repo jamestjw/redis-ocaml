@@ -2,6 +2,7 @@ open Core
 open State
 
 let default_empty_rdb_file = "data/empty.rdb"
+let default_replica_ping_interval = 10. (* seconds *)
 
 type request =
   { cmd : Cmd.t
@@ -102,11 +103,11 @@ let handle_message_for_replica { cmd; num_bytes; ic; oc } state =
     | Cmd.INVALID s -> Response.ERR s, state
     | other -> handle_message_generic (other, ic, oc) state
   in
-  res, State.incr_replication_offset state num_bytes
+  res, incr_replication_offset state ~delta:num_bytes
 ;;
 
 let handle_message_for_master
-  { cmd; ic = client_ic; oc = client_oc; _ }
+  { cmd; ic = client_ic; oc = client_oc; num_bytes }
   ({ replication; _ } as state)
   =
   match cmd with
@@ -117,7 +118,9 @@ let handle_message_for_master
      | MASTER { replicas; _ } ->
        Lwt.async (fun () ->
          Lwt_list.iter_p (fun (ic, oc) -> Client.propagate_set (ic, oc) cmd) replicas);
-       Response.SIMPLE "OK", set state set_key set_value (timeout_to_int set_timeout))
+       ( Response.SIMPLE "OK"
+       , set state set_key set_value (timeout_to_int set_timeout)
+         |> incr_replication_offset ~delta:num_bytes ))
   | Cmd.GET_CONFIG keys ->
     let res =
       List.map ~f:(fun k -> get_config state k |> Option.map ~f:(fun v -> [ k; v ])) keys
@@ -140,22 +143,69 @@ let handle_message_for_master
          } )
      | REPLICA _ -> failwith "impossible")
   | Cmd.WAIT (_num_replicas, _timeout) ->
-    Response.INTEGER (State.get_number_replicas state), state
+    (* Response.INTEGER (State.get_number_replicas state), state *)
+    Response.QUIET, state
   | Cmd.INVALID s -> Response.ERR s, state
   | other -> handle_message_generic (other, client_ic, client_oc) state
 ;;
 
+type task =
+  | PING_REPLICA of State.t
+  | REQUEST of (request * Response.t Lwt_mvar.t)
+
+let maybe_ping_replicas ({ replication; _ } as st) =
+  let open Lwt in
+  match replication with
+  | MASTER { replicas; _ } when List.is_empty replicas ->
+    Utils.forever () >|= fun () -> PING_REPLICA st
+  | MASTER ({ last_ping_timestamp; replicas; _ } as master) ->
+    let timeout =
+      Float.max
+        0.
+        (default_replica_ping_interval -. Core_unix.time () +. last_ping_timestamp)
+    in
+    let%lwt () = Lwt_unix.sleep timeout in
+    let%lwt () = Logs_lwt.debug (fun m -> m "PING-ing replicas") in
+    Lwt.async (fun () ->
+      (* TODO: if ping fails, we should assume the replica is dead and pop it from
+         the list *)
+      Lwt_list.iter_p (fun (ic, oc) -> Client.send_ping_no_resp (ic, oc)) replicas);
+    let st =
+      { st with
+        replication = MASTER { master with last_ping_timestamp = Core_unix.time () }
+      }
+      |> State.incr_replication_offset ~delta:14
+      (* 14 bytes in a PING command *)
+    in
+    Lwt.return @@ PING_REPLICA st
+  | REPLICA _ -> Utils.forever () >|= fun () -> PING_REPLICA st
+;;
+
 let run { mailbox } ~rdb_source ~replication =
+  let take mailbox =
+    let open Lwt in
+    Lwt_mvar.take mailbox >|= fun e -> REQUEST e
+  in
   let handle_message =
     match replication with
     | State.MASTER _ -> handle_message_for_master
     | State.REPLICA _ -> handle_message_for_replica
   in
-  let rec inner context =
-    let%lwt cmd, response_mailbox = Lwt_mvar.take mailbox in
-    let resp, context = handle_message cmd context in
-    Lwt.async (fun _ -> Lwt_mvar.put response_mailbox resp);
-    inner context
+  let do_task state task =
+    match task with
+    | PING_REPLICA state -> state
+    | REQUEST (req, response_mailbox) ->
+      let resp, state = handle_message req state in
+      Lwt.async (fun _ -> Lwt_mvar.put response_mailbox resp);
+      state
+  in
+  let rec inner state =
+    let%lwt tasks = Lwt.npick [ maybe_ping_replicas state; take mailbox ] in
+    let state = List.fold ~init:state ~f:do_task tasks in
+    (* let%lwt req, response_mailbox = Lwt_mvar.take mailbox in *)
+    (* let resp, state = handle_message req state in *)
+    (* Lwt.async (fun _ -> Lwt_mvar.put response_mailbox resp); *)
+    inner state
   in
   let state = mk_state ~rdb_source ~replication in
   inner state

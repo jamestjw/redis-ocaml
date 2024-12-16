@@ -13,6 +13,7 @@ type replication =
       { replication_id : string
       ; offset : int
       ; replicas : (Lwt_io.input_channel * Lwt_io.output_channel) list
+      ; last_ping_timestamp : float
       }
 
 type t =
@@ -36,6 +37,7 @@ let mk_master () =
     { replication_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
     ; offset = 0
     ; replicas = []
+    ; last_ping_timestamp = -1.0
     }
 ;;
 
@@ -110,7 +112,7 @@ let get_replication_offset { replication; _ } =
   | REPLICA { offset; _ } -> offset
 ;;
 
-let incr_replication_offset ({ replication; _ } as state) delta =
+let incr_replication_offset ({ replication; _ } as state) ~delta =
   let replication =
     match replication with
     | MASTER ({ offset; _ } as rest) -> MASTER { rest with offset = offset + delta }
