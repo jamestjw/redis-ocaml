@@ -1,11 +1,14 @@
 open Core
 module StringMap = Utils.StringMap
 
+type replica_details =
+  { replica_of : string * int
+  ; replication_id : string
+  ; offset : int
+  }
+
 type replication =
-  | REPLICA of
-      { replica_of : string * int
-      ; offset : int
-      }
+  | REPLICA of replica_details
   | MASTER of
       { replication_id : string
       ; offset : int
@@ -23,6 +26,18 @@ type t =
 type rdb_source =
   | RDB_BYTES of int list
   | RDB_FILE of string * string
+
+let mk_replica ~replica_of ~replication_id ~offset =
+  REPLICA { replica_of; replication_id; offset }
+;;
+
+let mk_master () =
+  MASTER
+    { replication_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
+    ; offset = 0
+    ; replicas = []
+    }
+;;
 
 let ms_to_ns ms = Int63.(of_int ms * of_int 1_000_000)
 let s_to_ns s = Int63.(of_int s * of_int 1_000_000_000)
@@ -52,7 +67,7 @@ let rdb_databases_to_store databases =
   List.fold ~init:StringMap.empty ~f:do_db databases
 ;;
 
-let mk_state ~rdb_source ~replica_of =
+let mk_state ~rdb_source ~replication =
   let rdb_bytes, configs =
     match rdb_source with
     | RDB_FILE (rdb_dir, rdb_filename) ->
@@ -85,16 +100,6 @@ let mk_state ~rdb_source ~replica_of =
        | Error e ->
          Logs.warn (fun m -> m "Couldn't parse RDB file: %s" e);
          StringMap.empty)
-  in
-  let replication =
-    match replica_of with
-    | Some replica_of -> REPLICA { replica_of; offset = 0 }
-    | None ->
-      MASTER
-        { replication_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
-        ; offset = 0
-        ; replicas = []
-        }
   in
   { store; configs; replication }
 ;;

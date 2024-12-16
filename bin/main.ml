@@ -41,17 +41,19 @@ let create_server ~sock ~rdb_dir ~rdb_filename ~replica_of ~listening_port =
   let server = Server.mk () in
   let rec loop () = Lwt_unix.accept sock >>= accept_connection server >>= loop in
   let run () =
-    let%lwt rdb_source =
+    let%lwt rdb_source, replication =
       match replica_of with
-      | None -> Lwt.return @@ State.RDB_FILE (rdb_dir, rdb_filename)
-      | Some _ ->
+      | None -> Lwt.return @@ (State.RDB_FILE (rdb_dir, rdb_filename), State.mk_master ())
+      | Some replica_of ->
         (match%lwt Replication.initiate_handshake replica_of listening_port with
-         | Ok (rdb_bytes, ic, oc) ->
+         | Ok (replication_id, offset, rdb_bytes, ic, oc) ->
            Lwt.async (fun _ -> Replication.listen_for_updates ic oc server);
-           Lwt.return @@ State.RDB_BYTES rdb_bytes
+           Lwt.return
+           @@ ( State.RDB_BYTES rdb_bytes
+              , State.mk_replica ~replica_of ~replication_id ~offset )
          | Error e -> Printf.failwithf "Did not manage to get dump from master: %s" e ())
     in
-    Server.run server ~rdb_source ~replica_of
+    Server.run server ~rdb_source ~replication
   in
   let start () =
     Lwt.on_failure (run ()) (fun e -> Logs.err (fun m -> m "%s" (Exn.to_string e)));

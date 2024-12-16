@@ -95,7 +95,6 @@ let handle_message_for_replica (cmd, num_bytes, client_ic, client_oc) state =
     | Cmd.MASTER_SET { set_key; set_value; set_timeout } ->
       Response.QUIET, set state set_key set_value (timeout_to_int set_timeout)
     | Cmd.REPL_CONF_GET_ACK _ ->
-      (* TODO: return the right thing *)
       ( Response.strs_to_bulk_array
           [ "REPLCONF"; "ACK"; string_of_int @@ State.get_replication_offset state ]
       , state )
@@ -129,7 +128,6 @@ let handle_message_for_master
   (* TODO: actually do something with these two *)
   | Cmd.REPL_CONF_PORT _ -> Response.SIMPLE "OK", state
   | Cmd.REPL_CONF_CAPA _ -> Response.SIMPLE "OK", state
-  (* TODO: complete this *)
   | Cmd.PSYNC _ ->
     (match replication with
      | MASTER ({ replication_id; replicas; _ } as master) ->
@@ -144,21 +142,20 @@ let handle_message_for_master
   | other -> handle_message_generic (other, client_ic, client_oc) state
 ;;
 
-let run { mailbox } ~rdb_source ~replica_of =
+let run { mailbox } ~rdb_source ~replication =
   let handle_message =
-    if Option.is_some replica_of
-    then handle_message_for_replica
-    else handle_message_for_master
+    match replication with
+    | State.MASTER _ -> handle_message_for_master
+    | State.REPLICA _ -> handle_message_for_replica
   in
   let rec inner context =
     let%lwt cmd, response_mailbox = Lwt_mvar.take mailbox in
-    (* TODO: use a different handle message function depending on whether we are
-       a master or replica node *)
+
     let resp, context = handle_message cmd context in
     Lwt.async (fun _ -> Lwt_mvar.put response_mailbox resp);
     inner context
   in
-  let state = mk_state ~rdb_source ~replica_of in
+  let state = mk_state ~rdb_source ~replication in
   inner state
 ;;
 

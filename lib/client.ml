@@ -94,7 +94,9 @@ let initiate_replication_stream (ic, oc) =
   match%lwt Parser.parse_simple ic with
   | Parsed res when Str.string_match psync_response_regex res 0 ->
     (* TODO: actually do something with this *)
-    Lwt_result.return ()
+    let replication_id = Str.matched_group 1 res in
+    let offset = Str.matched_group 2 res |> int_of_string in
+    Lwt_result.return (replication_id, offset)
   | Parsed s -> Lwt_result.fail (Printf.sprintf "invalid response to PSYNC: %s" s)
   | Disconnected ->
     Lwt_result.fail
