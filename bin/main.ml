@@ -8,13 +8,19 @@ let default_port = 6379
 let default_rdb_dir = "/tmp/redis-data"
 let default_rdb_filename = "rdbfile"
 
-let rec handle_connection ic oc server () =
-  match%lwt Parser.get_cmd ic with
-  | Some (cmd, _) ->
-    let%lwt _ = Logs_lwt.info (fun m -> m "Received command %s" @@ Cmd.show cmd) in
-    let%lwt resp = Server.execute_cmd { cmd; num_bytes = 0; ic; oc } server in
-    Lwt_io.write oc (Response.serialize resp) >>= handle_connection ic oc server
-  | None -> Logs_lwt.debug (fun m -> m "Connection closed")
+let handle_connection ic oc server () =
+  let id = Utils.mk_uuid () in
+  let rec inner () =
+    match%lwt Parser.get_cmd ic with
+    | Some (cmd, _) ->
+      let%lwt _ = Logs_lwt.info (fun m -> m "Received command %s" @@ Cmd.show cmd) in
+      let%lwt resp = Server.execute_cmd { cmd; num_bytes = 0; ic; oc; id } server in
+      Lwt_io.write oc (Response.serialize resp) >>= inner
+    | None ->
+      let%lwt () = Lwt_mvar.put server.disconnection_mailbox id in
+      Logs_lwt.debug (fun m -> m "Connection closed")
+  in
+  inner ()
 ;;
 
 let accept_connection server conn =
@@ -47,7 +53,12 @@ let create_server ~sock ~rdb_dir ~rdb_filename ~replica_of ~listening_port =
       | Some replica_of ->
         (match%lwt Replication.initiate_handshake replica_of listening_port with
          | Ok (replication_id, offset, rdb_bytes, ic, oc) ->
-           Lwt.async (fun _ -> Replication.listen_for_updates ic oc server);
+           Lwt.async (fun _ ->
+             let%lwt () = Replication.listen_for_updates ic oc server in
+             let%lwt () = Lwt_io.close ic in
+             let%lwt () = Lwt_io.close oc in
+             let%lwt () = Lwt_unix.close sock in
+             Lwt.return_unit);
            Lwt.return
            @@ ( State.RDB_BYTES rdb_bytes
               , State.mk_replica ~replica_of ~replication_id ~offset )

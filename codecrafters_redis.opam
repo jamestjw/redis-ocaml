@@ -19,6 +19,7 @@ depends: [
   "ppx_jane"
   "re"
   "conf-linux-libc-dev"
+  "uuidm"
   "odoc" {with-doc}
 ]
 build: [

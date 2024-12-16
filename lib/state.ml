@@ -12,7 +12,7 @@ type replication =
   | MASTER of
       { replication_id : string
       ; offset : int
-      ; replicas : (Lwt_io.input_channel * Lwt_io.output_channel) list
+      ; replicas : (Lwt_io.input_channel * Lwt_io.output_channel) StringMap.t
       ; last_ping_timestamp : float
       }
 
@@ -36,7 +36,7 @@ let mk_master () =
   MASTER
     { replication_id = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
     ; offset = 0
-    ; replicas = []
+    ; replicas = StringMap.empty
     ; last_ping_timestamp = -1.0
     }
 ;;
@@ -124,5 +124,12 @@ let incr_replication_offset ({ replication; _ } as state) ~delta =
 let get_number_replicas { replication; _ } =
   match replication with
   | REPLICA _ -> failwith "cannot get replica count for replicas"
-  | MASTER { replicas; _ } -> List.length replicas
+  | MASTER { replicas; _ } -> StringMap.cardinal replicas
+;;
+
+let drop_replica ({ replication; _ } as state) id =
+  match replication with
+  | REPLICA _ -> state
+  | MASTER ({ replicas; _ } as d) ->
+    { state with replication = MASTER { d with replicas = StringMap.remove id replicas } }
 ;;

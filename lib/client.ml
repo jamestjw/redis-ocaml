@@ -43,8 +43,11 @@ let cmd_to_str cmd =
 ;;
 
 let send_string oc str =
-  let%lwt _ = Lwt_io.write oc str in
-  Lwt.return_unit
+  if Lwt_io.is_closed oc
+  then Lwt.fail_with "channel closed"
+  else (
+    let%lwt _ = Lwt_io.write oc str in
+    Lwt.return_unit)
 ;;
 
 let send_request oc cmd = send_string oc @@ cmd_to_str cmd

@@ -2,6 +2,9 @@ open Core
 open Lwt
 module StringMap = Stdlib.Map.Make (String)
 
+let uuid = Uuidm.v4_gen (Stdlib.Random.State.make_self_init ())
+let mk_uuid () = Uuidm.to_string (uuid ())
+
 let read_all_bytes filename =
   let ic = In_channel.create ~binary:true filename in
   let rec read_all acc =

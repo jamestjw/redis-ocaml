@@ -24,6 +24,6 @@
           ppx_deriving
           ppx_jane
           re
-          conf-linux-libc-dev))
+          conf-linux-libc-dev uuidm))
 
 (cram enable)

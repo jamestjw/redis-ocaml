@@ -9,11 +9,19 @@ type request =
   ; num_bytes : int
   ; ic : Lwt_io.input_channel
   ; oc : Lwt_io.output_channel
+  ; id : string
   }
 
-type t = { mailbox : (request * Response.t Lwt_mvar.t) Lwt_mvar.t }
+type t =
+  { request_mailbox : (request * Response.t Lwt_mvar.t) Lwt_mvar.t
+  ; disconnection_mailbox : string Lwt_mvar.t
+  }
 
-let mk () = { mailbox = Lwt_mvar.create_empty () }
+let mk () =
+  { request_mailbox = Lwt_mvar.create_empty ()
+  ; disconnection_mailbox = Lwt_mvar.create_empty ()
+  }
+;;
 
 let filter_expired (v, expiry) =
   match expiry with
@@ -89,7 +97,7 @@ let handle_message_generic (cmd, _client_ic, _client_oc) ({ replication; _ } as 
     Response.ERR (Printf.sprintf "%s command is not supported" @@ Cmd.show cmd), state
 ;;
 
-let handle_message_for_replica { cmd; num_bytes; ic; oc } state =
+let handle_message_for_replica { cmd; num_bytes; ic; oc; _ } state =
   let res, state =
     match cmd with
     | Cmd.PING -> Response.SIMPLE "PONG", state
@@ -107,7 +115,7 @@ let handle_message_for_replica { cmd; num_bytes; ic; oc } state =
 ;;
 
 let handle_message_for_master
-  { cmd; ic = client_ic; oc = client_oc; num_bytes }
+  { cmd; ic = client_ic; oc = client_oc; num_bytes; id }
   ({ replication; _ } as state)
   =
   match cmd with
@@ -117,7 +125,9 @@ let handle_message_for_master
      | REPLICA _ -> failwith "impossible"
      | MASTER { replicas; _ } ->
        Lwt.async (fun () ->
-         Lwt_list.iter_p (fun (ic, oc) -> Client.propagate_set (ic, oc) cmd) replicas);
+         Lwt_list.iter_p
+           (fun (ic, oc) -> Client.propagate_set (ic, oc) cmd)
+           (StringMap.bindings replicas |> List.map ~f:(fun (_, v) -> v)));
        ( Response.SIMPLE "OK"
        , set state set_key set_value (timeout_to_int set_timeout)
          |> incr_replication_offset ~delta:num_bytes ))
@@ -139,7 +149,8 @@ let handle_message_for_master
        ( Response.FULL_RESYNC (replication_id, rdb_contents)
        , { state with
            replication =
-             MASTER { master with replicas = (client_ic, client_oc) :: replicas }
+             MASTER
+               { master with replicas = StringMap.add id (client_ic, client_oc) replicas }
          } )
      | REPLICA _ -> failwith "impossible")
   | Cmd.WAIT (_num_replicas, _timeout) ->
@@ -152,11 +163,12 @@ let handle_message_for_master
 type task =
   | PING_REPLICA of State.t
   | REQUEST of (request * Response.t Lwt_mvar.t)
+  | DISCONNECTION of string
 
 let maybe_ping_replicas ({ replication; _ } as st) =
   let open Lwt in
   match replication with
-  | MASTER { replicas; _ } when List.is_empty replicas ->
+  | MASTER { replicas; _ } when StringMap.is_empty replicas ->
     Utils.forever () >|= fun () -> PING_REPLICA st
   | MASTER ({ last_ping_timestamp; replicas; _ } as master) ->
     let timeout =
@@ -166,23 +178,37 @@ let maybe_ping_replicas ({ replication; _ } as st) =
     in
     let%lwt () = Lwt_unix.sleep timeout in
     let%lwt () = Logs_lwt.debug (fun m -> m "PING-ing replicas") in
-    Lwt.async (fun () ->
-      (* TODO: if ping fails, we should assume the replica is dead and pop it from
-         the list *)
-      Lwt_list.iter_p (fun (ic, oc) -> Client.send_ping_no_resp (ic, oc)) replicas);
+    let%lwt replicas =
+      Lwt_list.map_p
+        (fun (id, replica) ->
+          try%lwt Client.send_ping_no_resp replica >|= fun () -> Some (id, replica) with
+          | _ ->
+            let%lwt () = Logs_lwt.debug (fun m -> m "Lost connection to replica %s" id) in
+            Lwt.return_none)
+        (StringMap.bindings replicas)
+    in
     let st =
       { st with
-        replication = MASTER { master with last_ping_timestamp = Core_unix.time () }
+        replication =
+          MASTER
+            { master with
+              last_ping_timestamp = Core_unix.time ()
+            ; replicas = List.filter_opt replicas |> StringMap.of_list
+            }
       }
-      |> State.incr_replication_offset ~delta:14
       (* 14 bytes in a PING command *)
+      |> State.incr_replication_offset ~delta:14
     in
     Lwt.return @@ PING_REPLICA st
   | REPLICA _ -> Utils.forever () >|= fun () -> PING_REPLICA st
 ;;
 
-let run { mailbox } ~rdb_source ~replication =
-  let take mailbox =
+let run { request_mailbox; disconnection_mailbox } ~rdb_source ~replication =
+  let take_disconnection mailbox =
+    let open Lwt in
+    Lwt_mvar.take mailbox >|= fun e -> DISCONNECTION e
+  in
+  let take_req mailbox =
     let open Lwt in
     Lwt_mvar.take mailbox >|= fun e -> REQUEST e
   in
@@ -194,25 +220,29 @@ let run { mailbox } ~rdb_source ~replication =
   let do_task state task =
     match task with
     | PING_REPLICA state -> state
+    | DISCONNECTION id -> State.drop_replica state id
     | REQUEST (req, response_mailbox) ->
       let resp, state = handle_message req state in
       Lwt.async (fun _ -> Lwt_mvar.put response_mailbox resp);
       state
   in
   let rec inner state =
-    let%lwt tasks = Lwt.npick [ maybe_ping_replicas state; take mailbox ] in
+    let%lwt tasks =
+      Lwt.npick
+        [ take_disconnection disconnection_mailbox
+        ; maybe_ping_replicas state
+        ; take_req request_mailbox
+        ]
+    in
     let state = List.fold ~init:state ~f:do_task tasks in
-    (* let%lwt req, response_mailbox = Lwt_mvar.take mailbox in *)
-    (* let resp, state = handle_message req state in *)
-    (* Lwt.async (fun _ -> Lwt_mvar.put response_mailbox resp); *)
     inner state
   in
   let state = mk_state ~rdb_source ~replication in
   inner state
 ;;
 
-let execute_cmd req { mailbox } =
+let execute_cmd req { request_mailbox; _ } =
   let response_mailbox = Lwt_mvar.create_empty () in
-  let%lwt _ = Lwt_mvar.put mailbox (req, response_mailbox) in
+  let%lwt _ = Lwt_mvar.put request_mailbox (req, response_mailbox) in
   Lwt_mvar.take response_mailbox
 ;;
