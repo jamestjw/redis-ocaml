@@ -12,7 +12,7 @@ let rec handle_connection ic oc server () =
   match%lwt Parser.get_cmd ic with
   | Some (cmd, _) ->
     let%lwt _ = Logs_lwt.info (fun m -> m "Received command %s" @@ Cmd.show cmd) in
-    let%lwt resp = Server.execute_cmd (cmd, 0, ic, oc) server in
+    let%lwt resp = Server.execute_cmd { cmd; num_bytes = 0; ic; oc } server in
     Lwt_io.write oc (Response.serialize resp) >>= handle_connection ic oc server
   | None -> Logs_lwt.debug (fun m -> m "Connection closed")
 ;;

@@ -110,6 +110,7 @@ let args_to_cmd args =
   | "info" :: args -> parse_info_cmd args
   | "replconf" :: args -> parse_replconf_cmd args
   | "psync" :: args -> parse_psync_cmd args
+  | "wait" :: args -> parse_wait_cmd args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;

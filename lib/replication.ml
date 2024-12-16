@@ -19,7 +19,7 @@ let listen_for_updates ic oc server =
       let%lwt _ =
         Logs_lwt.info (fun m -> m "Received command %s from master" @@ Cmd.show cmd)
       in
-      let%lwt resp = Server.execute_cmd (cmd, bytes_read, ic, oc) server in
+      let%lwt resp = Server.execute_cmd { cmd; num_bytes = bytes_read; ic; oc } server in
       Lwt_io.write oc (Response.serialize resp) >>= run
     | None -> Logs_lwt.debug (fun m -> m "Connection closed")
   in

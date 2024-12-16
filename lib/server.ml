@@ -3,13 +3,14 @@ open State
 
 let default_empty_rdb_file = "data/empty.rdb"
 
-(* TODO: build a new request type for the product *)
-type t =
-  { mailbox :
-      ((Cmd.t * int * Lwt_io.input_channel * Lwt_io.output_channel)
-      * Response.t Lwt_mvar.t)
-        Lwt_mvar.t
+type request =
+  { cmd : Cmd.t
+  ; num_bytes : int
+  ; ic : Lwt_io.input_channel
+  ; oc : Lwt_io.output_channel
   }
+
+type t = { mailbox : (request * Response.t Lwt_mvar.t) Lwt_mvar.t }
 
 let mk () = { mailbox = Lwt_mvar.create_empty () }
 
@@ -87,7 +88,7 @@ let handle_message_generic (cmd, _client_ic, _client_oc) ({ replication; _ } as 
     Response.ERR (Printf.sprintf "%s command is not supported" @@ Cmd.show cmd), state
 ;;
 
-let handle_message_for_replica (cmd, num_bytes, client_ic, client_oc) state =
+let handle_message_for_replica { cmd; num_bytes; ic; oc } state =
   let res, state =
     match cmd with
     | Cmd.PING -> Response.SIMPLE "PONG", state
@@ -99,13 +100,13 @@ let handle_message_for_replica (cmd, num_bytes, client_ic, client_oc) state =
           [ "REPLCONF"; "ACK"; string_of_int @@ State.get_replication_offset state ]
       , state )
     | Cmd.INVALID s -> Response.ERR s, state
-    | other -> handle_message_generic (other, client_ic, client_oc) state
+    | other -> handle_message_generic (other, ic, oc) state
   in
   res, State.incr_replication_offset state num_bytes
 ;;
 
 let handle_message_for_master
-  (cmd, _num_bytes, client_ic, client_oc)
+  { cmd; ic = client_ic; oc = client_oc; _ }
   ({ replication; _ } as state)
   =
   match cmd with
@@ -150,7 +151,6 @@ let run { mailbox } ~rdb_source ~replication =
   in
   let rec inner context =
     let%lwt cmd, response_mailbox = Lwt_mvar.take mailbox in
-
     let resp, context = handle_message cmd context in
     Lwt.async (fun _ -> Lwt_mvar.put response_mailbox resp);
     inner context
@@ -159,8 +159,8 @@ let run { mailbox } ~rdb_source ~replication =
   inner state
 ;;
 
-let execute_cmd (cmd, num_bytes, ic, oc) { mailbox } =
+let execute_cmd req { mailbox } =
   let response_mailbox = Lwt_mvar.create_empty () in
-  let%lwt _ = Lwt_mvar.put mailbox ((cmd, num_bytes, ic, oc), response_mailbox) in
+  let%lwt _ = Lwt_mvar.put mailbox (req, response_mailbox) in
   Lwt_mvar.take response_mailbox
 ;;
