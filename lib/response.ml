@@ -7,6 +7,7 @@ type t =
   | ERR of string
   | ARRAY of t list
   | FULL_RESYNC of string * string
+  | INTEGER of int
   | QUIET
 
 let rec serialize = function
@@ -25,6 +26,7 @@ let rec serialize = function
       replication_id
       (String.length contents)
       contents
+  | INTEGER d -> Printf.sprintf ":%d\r\n" d
   | QUIET -> ""
 ;;
 

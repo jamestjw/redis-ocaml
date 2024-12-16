@@ -99,6 +99,15 @@ let parse_psync_cmd args =
   | _ -> Cmd.INVALID "'PSYNC' takes 2 args"
 ;;
 
+let parse_wait_cmd args =
+  match args with
+  | [ num_replicas; timeout ] ->
+    (match int_of_string_opt num_replicas, int_of_string_opt timeout with
+     | Some num_replicas, Some timeout -> Cmd.WAIT (num_replicas, timeout)
+     | _ -> Cmd.INVALID "'WAIT' expects integer arguments")
+  | _ -> Cmd.INVALID "'WAIT' takes 2 args"
+;;
+
 let args_to_cmd args =
   match lower_fst args with
   | "ping" :: args -> parse_ping_cmd args

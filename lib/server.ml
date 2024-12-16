@@ -139,6 +139,8 @@ let handle_message_for_master
              MASTER { master with replicas = (client_ic, client_oc) :: replicas }
          } )
      | REPLICA _ -> failwith "impossible")
+  | Cmd.WAIT (_num_replicas, _timeout) ->
+    Response.INTEGER (State.get_number_replicas state), state
   | Cmd.INVALID s -> Response.ERR s, state
   | other -> handle_message_generic (other, client_ic, client_oc) state
 ;;

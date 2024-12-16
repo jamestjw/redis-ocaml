@@ -20,6 +20,7 @@ type t =
   | REPL_CONF_CAPA of string (* replication capabilities *)
   | REPL_CONF_GET_ACK of string
   | PSYNC of string * int
+  | WAIT of int * int
   | INVALID of string
   | MASTER_SET of
       { set_key : string

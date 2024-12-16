@@ -118,3 +118,9 @@ let incr_replication_offset ({ replication; _ } as state) delta =
   in
   { state with replication }
 ;;
+
+let get_number_replicas { replication; _ } =
+  match replication with
+  | REPLICA _ -> failwith "cannot get replica count for replicas"
+  | MASTER { replicas; _ } -> List.length replicas
+;;
