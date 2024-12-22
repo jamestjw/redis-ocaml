@@ -108,11 +108,27 @@ let command =
          ~doc:
            "address_port the TCP server that hosts the master instance that we should \
             replicate"
+     and log_level =
+       flag
+         "--log-level"
+         (optional string)
+         ~doc:"info/debug/warning the verbosity of the application logs"
      in
      let rdb_dir = Option.value rdb_dir ~default:default_rdb_dir in
      let rdb_filename = Option.value rdb_file_name ~default:default_rdb_filename in
      let port = Option.value port ~default:default_port in
      let replica_of = Option.map ~f:parse_replica_of replica_of in
+     let log_level =
+       match Option.map ~f:String.lowercase log_level with
+       | Some "info" | None -> Logs.Info
+       | Some "warning" -> Logs.Warning
+       | Some "debug" -> Logs.Debug
+       | Some s ->
+         Logs.warn (fun m ->
+           m "Invalid log level '%s', should be one of info/warning/debug" s);
+         Logs.Info
+     in
+     let () = Logs.set_level (Some log_level) in
      fun () ->
        let server_socket =
          create_server_socket ~address:default_address ~port ~backlog:default_backlog
@@ -130,6 +146,5 @@ let command =
 
 let () =
   let () = Logs.set_reporter (Logs.format_reporter ()) in
-  let () = Logs.set_level (Some Logs.Info) in
   Command_unix.run command
 ;;
