@@ -1,4 +1,5 @@
-(* Client that replicas use to communicate with master *)
+(* Client that we use to communicate with another Redis server *)
+
 open Core
 open Lwt_unix
 open Lwt
@@ -37,6 +38,7 @@ let cmd_to_str cmd =
         | Some (EX i) -> [ "ex"; string_of_int i ]
       in
       Response.strs_to_bulk_array @@ [ "SET"; set_key; set_value ] @ timeout
+    | Cmd.REPL_CONF_GET_ACK s -> Response.strs_to_bulk_array [ "REPLCONF"; "GETACK"; s ]
     | _ -> failwith "not implemented yet"
   in
   Response.serialize arr
@@ -130,6 +132,20 @@ let propagate_set (_ic, oc) set_cmd =
 let send_ping_no_resp (_ic, oc) =
   let%lwt () = send_request oc @@ Cmd.PING in
   Lwt.return_unit
+;;
+
+let request_replica_ack (ic, oc) =
+  let%lwt () = send_request oc @@ Cmd.REPL_CONF_GET_ACK "*" in
+  match%lwt Parser.parse_resp_array ic with
+  | Some ([], _) ->
+    Lwt_result.fail
+    @@ Printf.sprintf "replica replied to GETACK with a malformed response"
+  | Some (res, _) ->
+    (match res with
+     | [ "REPLCONF"; "ACK"; ack ] -> Lwt_result.return @@ int_of_string ack
+     | _ -> Lwt_result.fail "unexpected response to res")
+  | None ->
+    Lwt_result.fail @@ Printf.sprintf "replica disconnected before responding to GETACK"
 ;;
 
 let close_connection sock = Lwt_unix.close sock

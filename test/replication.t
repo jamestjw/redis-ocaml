@@ -7,6 +7,7 @@ Start redis:
   redis_ocaml_server: [INFO] Received command (REPL_CONF_CAPA "psync2")
   redis_ocaml_server: [INFO] Received command (PSYNC ("?", -1))
   redis_ocaml_server: [INFO] Received command SET {set_key = "chicken"; set_value = "bbq"; set_timeout = None}
+  redis_ocaml_server: [INFO] Received command (WAIT (1, 500))
 
 Get replication info as master
   $ redis-cli INFO replication
@@ -24,9 +25,9 @@ Start replica:
   redis_ocaml_server: [INFO] Waiting for RDB dump
   redis_ocaml_server: [INFO] Listening for replication
   redis_ocaml_server: [INFO] RDB file loaded
-  redis_ocaml_server: [INFO] Received command MASTER_PING from master
   redis_ocaml_server: [INFO] Received command (INFO ["replication"])
   redis_ocaml_server: [INFO] Received command MASTER_SET {set_key = "chicken"; set_value = "bbq"; set_timeout = None} from master
+  redis_ocaml_server: [INFO] Received command (REPL_CONF_GET_ACK "*") from master
   redis_ocaml_server: [INFO] Received command (GET "chicken")
   $ sleep 0.2
 
@@ -38,8 +39,13 @@ Write to master
   $ redis-cli -p 6379 SET chicken bbq
   OK
 
+
+Wait (sync)
+  $ redis-cli -p 6379 WAIT 1 500
+  1
+
 Read from replica
-  $ sleep 0.1 && redis-cli -p 6380 GET chicken
+  $ redis-cli -p 6380 GET chicken
   bbq
 
 Kill redis:

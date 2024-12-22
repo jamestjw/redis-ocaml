@@ -133,3 +133,11 @@ let drop_replica ({ replication; _ } as state) id =
   | MASTER ({ replicas; _ } as d) ->
     { state with replication = MASTER { d with replicas = StringMap.remove id replicas } }
 ;;
+
+let get_replicas { replication; _ } =
+  match replication with
+  | REPLICA _ -> failwith "can only get replicas of MASTER"
+  | MASTER { replicas; _ } -> StringMap.to_list replicas
+;;
+
+let get_store_sz { store; _ } = StringMap.cardinal store

@@ -8,6 +8,12 @@ let default_port = 6379
 let default_rdb_dir = "/tmp/redis-data"
 let default_rdb_filename = "rdbfile"
 
+(* Whether we should stop listening after processing this command *)
+let should_drop = function
+  | Cmd.PSYNC _ -> true
+  | _ -> false
+;;
+
 let handle_connection ic oc server () =
   let id = Utils.mk_uuid () in
   let rec inner () =
@@ -15,7 +21,8 @@ let handle_connection ic oc server () =
     | Some (cmd, _) ->
       let%lwt _ = Logs_lwt.info (fun m -> m "Received command %s" @@ Cmd.show cmd) in
       let%lwt resp = Server.execute_cmd { cmd; num_bytes = 0; ic; oc; id } server in
-      Lwt_io.write oc (Response.serialize resp) >>= inner
+      let%lwt _ = Lwt_io.write oc (Response.serialize resp) in
+      if should_drop cmd then Lwt.return_unit else inner ()
     | None ->
       let%lwt () = Lwt_mvar.put server.disconnection_mailbox id in
       Logs_lwt.debug (fun m -> m "Connection closed")
@@ -55,9 +62,9 @@ let create_server ~sock ~rdb_dir ~rdb_filename ~replica_of ~listening_port =
          | Ok (replication_id, offset, rdb_bytes, ic, oc) ->
            Lwt.async (fun _ ->
              let%lwt () = Replication.listen_for_updates ic oc server in
-             let%lwt () = Lwt_io.close ic in
-             let%lwt () = Lwt_io.close oc in
-             let%lwt () = Lwt_unix.close sock in
+             (* let%lwt () = Lwt_io.close ic in *)
+             (* let%lwt () = Lwt_io.close oc in *)
+             (* let%lwt () = Lwt_unix.close sock in *)
              Lwt.return_unit);
            Lwt.return
            @@ ( State.RDB_BYTES rdb_bytes

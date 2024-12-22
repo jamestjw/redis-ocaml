@@ -6,6 +6,7 @@
   core_unix.sys_unix
   fmt
   lwt.unix
+  lwt-dllist
   logs.lwt
   re
   str

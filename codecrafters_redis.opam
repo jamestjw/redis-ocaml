@@ -20,6 +20,7 @@ depends: [
   "re"
   "conf-linux-libc-dev"
   "uuidm"
+  "lwt-dllist"
   "odoc" {with-doc}
 ]
 build: [

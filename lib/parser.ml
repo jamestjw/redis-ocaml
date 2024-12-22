@@ -8,6 +8,7 @@ let array_length_regex = Str.regexp {|\*\([0-9]+\)|}
 (* To parse BULK strings *)
 let bulk_str_len_regex = Str.regexp {|\$\([0-9]+\)|}
 let simple_regex = Str.regexp {|\+\(.*\)|}
+let integer_regex = Str.regexp {|\:\([0-9]+\)|}
 
 type 'a parse_result =
   | Disconnected
@@ -130,7 +131,7 @@ let parse_len regexp ic =
   | Some (msg, bytes_read) ->
     if Str.string_match regexp msg 0
     then return @@ Parsed (Stdlib.int_of_string @@ Str.matched_group 1 msg, bytes_read)
-    else return @@ InvalidFormat msg
+    else return @@ InvalidFormat (Printf.sprintf "%s is not a valid len" msg)
 ;;
 
 let parse_bulk_string_len = parse_len bulk_str_len_regex
@@ -140,7 +141,7 @@ let parse_bulk_string ic =
   match%lwt parse_bulk_string_len ic with
   | Disconnected -> return Disconnected
   | InvalidFormat s ->
-    let%lwt _ = Logs_lwt.err (fun m -> m "Received malformed length %s" s) in
+    let%lwt _ = Logs_lwt.err (fun m -> m "Received malformed bulk string length %s" s) in
     return (InvalidFormat s)
   | Parsed (arg_len, len_bytes_read) ->
     (match%lwt Utils.read_line_with_length_opt ic with
@@ -172,7 +173,7 @@ let parse_resp_array ic =
   match%lwt parse_array_len ic with
   | Disconnected -> return None
   | InvalidFormat s ->
-    let%lwt _ = Logs_lwt.err (fun m -> m "Received malformed length %s" s) in
+    let%lwt _ = Logs_lwt.err (fun m -> m "Received malformed array length %s" s) in
     return @@ Some ([], 0)
   | Parsed (num_args, len_bytes_read) when num_args <= 0 ->
     let%lwt _ =
@@ -183,7 +184,10 @@ let parse_resp_array ic =
     (match%lwt parse_bulk_strings num_args with
      | Disconnected -> return None
      | InvalidFormat s ->
-       let%lwt _ = Logs_lwt.err (fun m -> m "Invalid command format %s" s) in
+       let%lwt _ =
+         Logs_lwt.err (fun m ->
+           m "Expected resp array of length %d, but got error %s" num_args s)
+       in
        return @@ Some ([], len_bytes_read)
      | Parsed (arg_list, array_bytes_read) ->
        return @@ Some (arg_list, len_bytes_read + array_bytes_read))
@@ -200,6 +204,20 @@ let parse_simple ic =
       @@ InvalidFormat
            (Printf.sprintf
               "expected SIMPLE string, i.e. starting with '+', but got %s instead"
+              msg)
+;;
+
+let parse_integer ic =
+  match%lwt Lwt_io.read_line_opt ic with
+  | None -> return Disconnected
+  | Some msg ->
+    if Str.string_match integer_regex msg 0
+    then return @@ Parsed (Str.matched_group 1 msg |> int_of_string)
+    else
+      return
+      @@ InvalidFormat
+           (Printf.sprintf
+              "expected INTEGER, i.e. starting with ':', but got %s instead"
               msg)
 ;;
 
