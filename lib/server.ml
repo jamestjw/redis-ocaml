@@ -23,22 +23,21 @@ let mk () =
   }
 ;;
 
-let filter_expired (v, expiry) =
-  match expiry with
-  | Some timeout
+let filter_expired = function
+  | STR (_, Some timeout)
     when Int63.compare (Time_now.nanoseconds_since_unix_epoch ()) timeout >= 0 -> None
-  | _ -> Some v
+  | e -> Some e
 ;;
 
 let get { store; _ } key = StringMap.find_opt key store |> Option.bind ~f:filter_expired
 
-let set ({ store; _ } as state) key value expiry =
-  { state with store = StringMap.add key (value, expiry) store }
+let set ({ store; _ } as state) key value =
+  { state with store = StringMap.add key value store }
 ;;
 
 let get_keys { store; _ } =
   StringMap.to_list store
-  |> List.filter_map ~f:(fun (k, (_, expiry)) -> filter_expired (k, expiry))
+  |> List.filter_map ~f:(fun (k, v) -> filter_expired v |> Option.map ~f:(fun _ -> k))
 ;;
 
 let get_config { configs; _ } key = StringMap.find_opt key configs
@@ -132,7 +131,8 @@ let handle_message_generic (cmd, _client_ic, _client_oc) ({ replication; _ } as 
     let res =
       match get state k with
       | None -> Response.NULL_BULK
-      | Some v -> Response.BULK v
+      | Some (STR (v, _)) -> Response.BULK v
+      | Some _ -> Response.ERR "Operation against a key holding the wrong kind of value"
     in
     res, state
   | Cmd.GET_CONFIG keys ->
@@ -155,7 +155,8 @@ let handle_message_generic (cmd, _client_ic, _client_oc) ({ replication; _ } as 
     let res =
       match get state k with
       | None -> Response.SIMPLE "none"
-      | Some _ -> Response.SIMPLE "string"
+      | Some (STR _) -> Response.SIMPLE "string"
+      | Some (STREAM _) -> Response.SIMPLE "stream"
     in
     res, state
   | Cmd.INVALID s -> Response.ERR s, state
@@ -169,7 +170,7 @@ let handle_message_for_replica { cmd; num_bytes; ic; oc; _ } state =
     | Cmd.PING -> Response.SIMPLE "PONG", state
     | Cmd.MASTER_PING -> Response.QUIET, state
     | Cmd.MASTER_SET { set_key; set_value; set_timeout } ->
-      Response.QUIET, set state set_key set_value (timeout_to_int set_timeout)
+      Response.QUIET, set state set_key (STR (set_value, timeout_to_int set_timeout))
     | Cmd.REPL_CONF_GET_ACK _ ->
       ( Response.strs_to_bulk_array
           [ "REPLCONF"; "ACK"; string_of_int @@ State.get_replication_offset state ]
@@ -195,7 +196,7 @@ let handle_message_for_master
            (fun (ic, oc) -> Client.propagate_set (ic, oc) cmd)
            (StringMap.bindings replicas |> List.map ~f:(fun (_, v) -> v)));
        ( Response.SIMPLE "OK"
-       , set state set_key set_value (timeout_to_int set_timeout)
+       , set state set_key (STR (set_value, timeout_to_int set_timeout))
          |> incr_replication_offset ~delta:num_bytes ))
   | Cmd.GET_CONFIG keys ->
     let res =
@@ -228,6 +229,12 @@ let handle_message_for_master
       let state = handle_wait num_replicas timeout state client_oc in
       Response.QUIET, state)
   | Cmd.INVALID s -> Response.ERR s, state
+  | Cmd.XADD (key, id, pairs) ->
+    (match get state key with
+     | Some (STREAM entries) ->
+       Response.BULK id, set state key (STREAM (entries @ [ id, pairs ]))
+     | None -> Response.BULK id, set state key (STREAM [ id, pairs ])
+     | Some _ -> Response.ERR "type error", state)
   | other -> handle_message_generic (other, client_ic, client_oc) state
 ;;
 

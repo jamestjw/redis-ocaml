@@ -23,6 +23,8 @@ type t =
   | WAIT of int * int
   | INVALID of string
   | TYPE of string
+  (* key name, entry id, kv pairs *)
+  | XADD of string * string * (string * string) list
   | MASTER_SET of
       { set_key : string
       ; set_value : string

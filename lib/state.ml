@@ -16,9 +16,16 @@ type replication =
       ; last_ping_timestamp : float
       }
 
+(* Each entry has a string ID along with a list of KV pairs *)
+type stream = (string * (string * string) list) list
+
+type store_value =
+  | STR of string * Int63.t option
+  | STREAM of stream
+
 type t =
   { (* Storing the expiry in nanoseconds *)
-    store : (string * Int63.t option) StringMap.t
+    store : store_value StringMap.t
   ; configs : string StringMap.t
   ; replication : replication
   }
@@ -53,7 +60,7 @@ let rdb_databases_to_store databases =
       | Parser.MILLISECS ms -> ms_to_ns ms
       | Parser.SECS s -> s_to_ns s
     in
-    StringMap.add key (value, expire_timestamp) map
+    StringMap.add key (STR (value, expire_timestamp)) map
   in
   let do_db map (db : Parser.database) =
     List.fold

@@ -115,6 +115,21 @@ let parse_wait_cmd args =
   | _ -> Cmd.INVALID "'WAIT' takes 2 args"
 ;;
 
+let parse_xadd_cmd args =
+  let rec take_kv_pairs args acc =
+    match args with
+    | [] -> Ok (List.rev acc)
+    | k :: v :: rest -> take_kv_pairs rest ((k, v) :: acc)
+    | _ -> Error "extra arguments passed to 'XADD'"
+  in
+  match args with
+  | key :: id :: args ->
+    (match take_kv_pairs args [] with
+     | Ok pairs -> Cmd.XADD (key, id, pairs)
+     | Error e -> Cmd.INVALID e)
+  | _ -> Cmd.INVALID "wrong number of arguments for 'XADD' command"
+;;
+
 let args_to_cmd args =
   match lower_fst args with
   | "ping" :: args -> parse_ping_cmd args
@@ -128,6 +143,7 @@ let args_to_cmd args =
   | "psync" :: args -> parse_psync_cmd args
   | "wait" :: args -> parse_wait_cmd args
   | "type" :: args -> parse_type_cmd args
+  | "xadd" :: args -> parse_xadd_cmd args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;
