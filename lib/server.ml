@@ -151,6 +151,13 @@ let handle_message_generic (cmd, _client_ic, _client_oc) ({ replication; _ } as 
     in
     Response.ARRAY keys, state
   | Cmd.INFO args -> Response.BULK (fetch_replication_info replication args), state
+  | Cmd.TYPE k ->
+    let res =
+      match get state k with
+      | None -> Response.SIMPLE "none"
+      | Some _ -> Response.SIMPLE "string"
+    in
+    res, state
   | Cmd.INVALID s -> Response.ERR s, state
   | cmd ->
     Response.ERR (Printf.sprintf "%s command is not supported" @@ Cmd.show cmd), state

@@ -22,6 +22,7 @@ type t =
   | PSYNC of string * int
   | WAIT of int * int
   | INVALID of string
+  | TYPE of string
   | MASTER_SET of
       { set_key : string
       ; set_value : string

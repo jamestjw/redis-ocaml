@@ -80,6 +80,12 @@ let parse_keys_cmd args =
 
 let parse_info_cmd args = Cmd.INFO args
 
+let parse_type_cmd args =
+  match args with
+  | [ key ] -> Cmd.TYPE key
+  | _ -> Cmd.INVALID "'TYPE' takes one arg"
+;;
+
 let parse_replconf_cmd args =
   match lower_fst args with
   | [ "listening-port"; port ] ->
@@ -121,6 +127,7 @@ let args_to_cmd args =
   | "replconf" :: args -> parse_replconf_cmd args
   | "psync" :: args -> parse_psync_cmd args
   | "wait" :: args -> parse_wait_cmd args
+  | "type" :: args -> parse_type_cmd args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;
