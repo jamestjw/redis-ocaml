@@ -60,9 +60,9 @@ let fetch_replication_info replication _ =
 let timeout_to_int = function
   | None -> None
   | Some (Cmd.PX ms) ->
-    Some Int63.(Time_now.nanoseconds_since_unix_epoch () + ms_to_ns ms)
+    Some Int63.(Time_now.nanoseconds_since_unix_epoch () + Utils.Time.int_ms_to_ns ms)
   | Some (Cmd.EX secs) ->
-    Some Int63.(Time_now.nanoseconds_since_unix_epoch () + s_to_ns secs)
+    Some Int63.(Time_now.nanoseconds_since_unix_epoch () + Utils.Time.int_s_to_ns secs)
 ;;
 
 let handle_wait num_replicas timeout_ms state oc =
@@ -255,7 +255,17 @@ let handle_message_for_master
           "The ID specified in XADD is equal or smaller than the target stream top item"
       | Cmd.AUTO_SEQ ms, Some (ms2, _) when ms > ms2 -> Ok (ms, 0)
       | Cmd.AUTO_SEQ ms, Some (_, seq) -> Ok (ms, seq + 1)
-      | Cmd.AUTO, _ -> failwith "todo"
+      | Cmd.AUTO, prev_id ->
+        let ms =
+          Utils.Time.ns_to_ms (Time_now.nanoseconds_since_unix_epoch ())
+          |> Int63.to_int_trunc
+        in
+        (match prev_id with
+         | None -> Ok (ms, 0)
+         | Some (ms2, _) when ms2 < ms -> Ok (ms, 0)
+         (* If the last saved timestamp is already greater than the current
+            timestamp, then we just use that instead *)
+         | Some (ms2, seq2) -> Ok (ms2, seq2 + 1))
     in
     (match get state key with
      | Some (STREAM []) -> failwith "impossible"

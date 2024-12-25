@@ -24,3 +24,9 @@ let read_line_with_length_opt ic =
 
 (* TODO: is it better to sleep with Float.infinity? *)
 let rec forever () = Lwt_unix.sleep 0.5 >>= forever
+
+module Time = struct
+  let int_ms_to_ns ms = Int63.(of_int ms * of_int 1_000_000)
+  let int_s_to_ns s = Int63.(of_int s * of_int 1_000_000_000)
+  let ns_to_ms ns = Int63.(ns / of_int 1_000_000)
+end

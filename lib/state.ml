@@ -49,17 +49,14 @@ let mk_master () =
     }
 ;;
 
-let ms_to_ns ms = Int63.(of_int ms * of_int 1_000_000)
-let s_to_ns s = Int63.(of_int s * of_int 1_000_000_000)
-
 let rdb_databases_to_store databases =
   let do_key_value map key value expire_timestamp =
     let open Option.Let_syntax in
     let expire_timestamp =
       expire_timestamp
       >>| function
-      | Parser.MILLISECS ms -> ms_to_ns ms
-      | Parser.SECS s -> s_to_ns s
+      | Parser.MILLISECS ms -> Utils.Time.int_ms_to_ns ms
+      | Parser.SECS s -> Utils.Time.int_s_to_ns s
     in
     StringMap.add key (STR (value, expire_timestamp)) map
   in
