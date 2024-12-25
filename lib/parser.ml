@@ -152,20 +152,26 @@ let parse_xadd_cmd args =
 let parse_xrange_cmd args =
   let explicit_id_regex = Str.regexp {|\([0-9]+\)\-\([0-9]+\)|} in
   let time_only_regex = Str.regexp {|\([0-9]+\)|} in
-  let str_to_id s =
+  let str_to_id s wildcard_str =
     if Str.string_match explicit_id_regex s 0
     then
       Ok
-        ( Stdlib.int_of_string (Str.matched_group 1 s)
-        , Stdlib.int_of_string (Str.matched_group 2 s) )
+        (Some
+           ( Stdlib.int_of_string (Str.matched_group 1 s)
+           , Stdlib.int_of_string (Str.matched_group 2 s) ))
     else if Str.string_match time_only_regex s 0
-    then Ok (Stdlib.int_of_string (Str.matched_group 1 s), 0)
+    then Ok (Some (Stdlib.int_of_string (Str.matched_group 1 s), 0))
+    else if String.equal s wildcard_str
+    then Ok None
     else Error "invalid ID format in 'XRANGE'"
   in
   match args with
   | [ key; lower; upper ] ->
-    (match str_to_id lower, str_to_id upper with
-     | Ok lower, Ok upper -> Cmd.XRANGE (key, lower, upper)
+    (match str_to_id lower "-", str_to_id upper "+" with
+     | Ok (Some lower), Ok (Some upper) -> Cmd.XRANGE (key, Cmd.BTW (lower, upper))
+     | Ok (Some lower), Ok None -> Cmd.XRANGE (key, Cmd.GTE lower)
+     | Ok None, Ok (Some upper) -> Cmd.XRANGE (key, Cmd.LTE upper)
+     | Ok None, Ok None -> Cmd.XRANGE (key, Cmd.ALL)
      | Error e, _ | _, Error e -> Cmd.INVALID e)
   | _ -> Cmd.INVALID "wrong number of arguments for 'XRANGE' command"
 ;;

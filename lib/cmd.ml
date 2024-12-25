@@ -1,3 +1,5 @@
+open Core
+
 type set_timeout =
   | PX of int (* milliseconds until expiry *)
   | EX of int (* seconds until expiry *)
@@ -7,6 +9,13 @@ type stream_id =
   | EXPLICIT of int * int (* <millisecondsTime>-<sequenceNumber> *)
   | AUTO_SEQ of int (* auto generate the sequence number *)
   | AUTO (* auto generate both *)
+[@@deriving show { with_path = false }]
+
+type 'a range =
+  | BTW of 'a * 'a
+  | GTE of 'a
+  | LTE of 'a
+  | ALL
 [@@deriving show { with_path = false }]
 
 type t =
@@ -31,10 +40,17 @@ type t =
   | TYPE of string
   (* key name, entry id, kv pairs *)
   | XADD of string * stream_id * (string * string) list
-  | XRANGE of string * (int * int) * (int * int)
+  | XRANGE of string * (int * int) range
   | MASTER_SET of
       { set_key : string
       ; set_value : string
       ; set_timeout : set_timeout option
       }
 [@@deriving show { with_path = false }]
+
+let is_in_range a = function
+  | BTW (lower, upper) -> Poly.compare a lower >= 0 && Poly.compare a upper <= 0
+  | GTE lower -> Poly.compare a lower >= 0
+  | LTE upper -> Poly.compare a upper <= 0
+  | ALL -> true
+;;
