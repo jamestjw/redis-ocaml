@@ -30,3 +30,9 @@ module Time = struct
   let int_s_to_ns s = Int63.(of_int s * of_int 1_000_000_000)
   let ns_to_ms ns = Int63.(ns / of_int 1_000_000)
 end
+
+module List = struct
+  let flatten_tuples lst =
+    List.fold_left ~f:(fun acc (x, y) -> y :: x :: acc) ~init:[] lst |> List.rev
+  ;;
+end

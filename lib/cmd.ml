@@ -31,6 +31,7 @@ type t =
   | TYPE of string
   (* key name, entry id, kv pairs *)
   | XADD of string * stream_id * (string * string) list
+  | XRANGE of string * (int * int) * (int * int)
   | MASTER_SET of
       { set_key : string
       ; set_value : string

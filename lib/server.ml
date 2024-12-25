@@ -124,6 +124,26 @@ let handle_wait num_replicas timeout_ms state oc =
   incr_replication_offset state ~delta:37
 ;;
 
+let handle_xrange key lower upper state =
+  let entry_to_res (id, pairs) =
+    Response.ARRAY
+      [ Response.BULK (State.stream_id_to_string id)
+      ; Response.strs_to_bulk_array (Utils.List.flatten_tuples pairs)
+      ]
+  in
+  let is_in_range id = Poly.compare id lower >= 0 && Poly.compare id upper <= 0 in
+  match get state key with
+  | None -> Response.ARRAY []
+  | Some (STREAM entries) ->
+    let res =
+      List.filter ~f:(fun (id, _) -> is_in_range id) entries
+      |> List.map ~f:entry_to_res
+      |> List.rev
+    in
+    Response.ARRAY res
+  | Some _ -> Response.ERR "Operation against a key holding the wrong kind of value"
+;;
+
 let handle_message_generic (cmd, _client_ic, _client_oc) ({ replication; _ } as state) =
   match cmd with
   | Cmd.ECHO s -> Response.BULK s, state
@@ -160,6 +180,7 @@ let handle_message_generic (cmd, _client_ic, _client_oc) ({ replication; _ } as 
     in
     res, state
   | Cmd.INVALID s -> Response.ERR s, state
+  | Cmd.XRANGE (key, lower, upper) -> handle_xrange key lower upper state, state
   | cmd ->
     Response.ERR (Printf.sprintf "%s command is not supported" @@ Cmd.show cmd), state
 ;;

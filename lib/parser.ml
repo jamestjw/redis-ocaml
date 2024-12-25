@@ -149,6 +149,27 @@ let parse_xadd_cmd args =
   | _ -> Cmd.INVALID "wrong number of arguments for 'XADD' command"
 ;;
 
+let parse_xrange_cmd args =
+  let explicit_id_regex = Str.regexp {|\([0-9]+\)\-\([0-9]+\)|} in
+  let time_only_regex = Str.regexp {|\([0-9]+\)|} in
+  let str_to_id s =
+    if Str.string_match explicit_id_regex s 0
+    then
+      Ok
+        ( Stdlib.int_of_string (Str.matched_group 1 s)
+        , Stdlib.int_of_string (Str.matched_group 2 s) )
+    else if Str.string_match time_only_regex s 0
+    then Ok (Stdlib.int_of_string (Str.matched_group 1 s), 0)
+    else Error "invalid ID format in 'XRANGE'"
+  in
+  match args with
+  | [ key; lower; upper ] ->
+    (match str_to_id lower, str_to_id upper with
+     | Ok lower, Ok upper -> Cmd.XRANGE (key, lower, upper)
+     | Error e, _ | _, Error e -> Cmd.INVALID e)
+  | _ -> Cmd.INVALID "wrong number of arguments for 'XRANGE' command"
+;;
+
 let args_to_cmd args =
   match lower_fst args with
   | "ping" :: args -> parse_ping_cmd args
@@ -163,6 +184,7 @@ let args_to_cmd args =
   | "wait" :: args -> parse_wait_cmd args
   | "type" :: args -> parse_type_cmd args
   | "xadd" :: args -> parse_xadd_cmd args
+  | "xrange" :: args -> parse_xrange_cmd args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;

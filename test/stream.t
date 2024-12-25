@@ -25,6 +25,7 @@ Start redis:
      [("temperature", "36"); ("humidity", "95")]))
   redis_ocaml_server: [INFO] Received command (XADD ("stream_key2", (EXPLICIT (0, 0)),
      [("temperature", "36"); ("humidity", "95")]))
+  redis_ocaml_server: [INFO] Received command (XRANGE ("stream_key", (1526919030474, 1), (1526919030476, 3)))
 
 XADD with valid entry id:
   $ redis-cli XADD stream_key 0-* temperature 24 humidity 75
@@ -58,6 +59,28 @@ XADD with invalid entry id:
   $ redis-cli XADD stream_key2 0-0 temperature 36 humidity 95
   ERR The ID specified in XADD must be greater than 0-0
   
+XRANGE:
+  $ redis-cli XRANGE stream_key 1526919030474-1 1526919030476-3
+  1526919030474-1
+  temperature
+  45
+  humidity
+  91
+  1526919030475-0
+  temperature
+  24
+  humidity
+  81
+  1526919030476-2
+  temperature
+  28
+  humidity
+  83
+  1526919030476-3
+  temperature
+  29
+  humidity
+  85
 
 Kill redis:
   $ ./kill_redis.sh
