@@ -116,6 +116,22 @@ let parse_wait_cmd args =
 ;;
 
 let parse_xadd_cmd args =
+  let explicit_id_regex = Str.regexp {|\([0-9]+\)\-\([0-9]+\)|} in
+  let partially_implicit_id_regex = Str.regexp {|\([0-9]+\)\-\*|} in
+  let fully_implicit_id_regex = Str.regexp {|\*|} in
+  let parse_id id =
+    if Str.string_match explicit_id_regex id 0
+    then
+      Some
+        (Cmd.EXPLICIT
+           ( Stdlib.int_of_string (Str.matched_group 1 id)
+           , Stdlib.int_of_string (Str.matched_group 2 id) ))
+    else if Str.string_match partially_implicit_id_regex id 0
+    then Some (Cmd.AUTO_SEQ (Stdlib.int_of_string (Str.matched_group 1 id)))
+    else if Str.string_match fully_implicit_id_regex id 0
+    then Some Cmd.AUTO
+    else None
+  in
   let rec take_kv_pairs args acc =
     match args with
     | [] -> Ok (List.rev acc)
@@ -124,18 +140,12 @@ let parse_xadd_cmd args =
   in
   match args with
   | key :: id :: args ->
-    let explicit_id_regex = Str.regexp {|\([0-9]+\)\-\([0-9]+\)|} in
-    if Str.string_match explicit_id_regex id 0
-    then (
-      let id =
-        Cmd.EXPLICIT
-          ( Stdlib.int_of_string (Str.matched_group 1 id)
-          , Stdlib.int_of_string (Str.matched_group 2 id) )
-      in
-      match take_kv_pairs args [] with
-      | Ok pairs -> Cmd.XADD (key, id, pairs)
-      | Error e -> Cmd.INVALID e)
-    else Cmd.INVALID "invalid entry ID"
+    (match parse_id id with
+     | Some id ->
+       (match take_kv_pairs args [] with
+        | Ok pairs -> Cmd.XADD (key, id, pairs)
+        | Error e -> Cmd.INVALID e)
+     | None -> Cmd.INVALID "invalid entry ID")
   | _ -> Cmd.INVALID "wrong number of arguments for 'XADD' command"
 ;;
 

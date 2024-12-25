@@ -230,12 +230,6 @@ let handle_message_for_master
       Response.QUIET, state)
   | Cmd.INVALID s -> Response.ERR s, state
   | Cmd.XADD (key, id, pairs) ->
-    let id =
-      match id with
-      | Cmd.EXPLICIT (ms, seq) -> ms, seq
-      | _ -> failwith "can't handle this yet"
-    in
-    let id_str = State.stream_id_to_string id in
     let validate_id curr_id last_id =
       let ms1, seq1 = curr_id in
       let ms2, seq2 = last_id in
@@ -243,17 +237,40 @@ let handle_message_for_master
          a newer sequence number *)
       ms1 > ms2 || (ms1 = ms2 && seq1 > seq2)
     in
+    let id_to_ints id prev_id =
+      match id, prev_id with
+      | Cmd.EXPLICIT (ms, seq), _ when not @@ validate_id (ms, seq) (0, 0) ->
+        Error "The ID specified in XADD must be greater than 0-0"
+      | Cmd.EXPLICIT (ms, seq), None -> Ok (ms, seq)
+      | Cmd.EXPLICIT (ms, seq), Some other when validate_id (ms, seq) other -> Ok (ms, seq)
+      | Cmd.EXPLICIT _, Some _ ->
+        Error
+          "The ID specified in XADD is equal or smaller than the target stream top item"
+      | Cmd.AUTO_SEQ ms, _ when ms < 0 ->
+        Error "The ID specified in XADD must be greater than 0-0"
+      | Cmd.AUTO_SEQ ms, None when ms = 0 -> Ok (ms, 1)
+      | Cmd.AUTO_SEQ ms, None -> Ok (ms, 0)
+      | Cmd.AUTO_SEQ ms, Some (ms2, _) when ms < ms2 ->
+        Error
+          "The ID specified in XADD is equal or smaller than the target stream top item"
+      | Cmd.AUTO_SEQ ms, Some (ms2, _) when ms > ms2 -> Ok (ms, 0)
+      | Cmd.AUTO_SEQ ms, Some (_, seq) -> Ok (ms, seq + 1)
+      | Cmd.AUTO, _ -> failwith "todo"
+    in
     (match get state key with
-     | _ when not @@ validate_id id (0, 0) ->
-       Response.ERR "The ID specified in XADD must be greater than 0-0", state
      | Some (STREAM []) -> failwith "impossible"
-     | Some (STREAM ((prev_id, _) :: _ as entries)) when validate_id id prev_id ->
-       Response.BULK id_str, set state key (STREAM ((id, pairs) :: entries))
-     | Some (STREAM _) ->
-       ( Response.ERR
-           "The ID specified in XADD is equal or smaller than the target stream top item"
-       , state )
-     | None -> Response.BULK id_str, set state key (STREAM [ id, pairs ])
+     | Some (STREAM ((prev_id, _) :: _ as entries)) ->
+       (match id_to_ints id (Some prev_id) with
+        | Ok id ->
+          ( Response.BULK (State.stream_id_to_string id)
+          , set state key (STREAM ((id, pairs) :: entries)) )
+        | Error e -> Response.ERR e, state)
+     | None ->
+       (match id_to_ints id None with
+        | Ok id ->
+          ( Response.BULK (State.stream_id_to_string id)
+          , set state key (STREAM [ id, pairs ]) )
+        | Error e -> Response.ERR e, state)
      | Some _ -> Response.ERR "type error", state)
   | other -> handle_message_generic (other, client_ic, client_oc) state
 ;;
