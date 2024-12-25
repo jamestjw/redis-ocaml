@@ -124,23 +124,45 @@ let handle_wait num_replicas timeout_ms state oc =
   incr_replication_offset state ~delta:37
 ;;
 
-let handle_xrange key range state =
-  let entry_to_res (id, pairs) =
-    Response.ARRAY
-      [ Response.BULK (State.stream_id_to_string id)
-      ; Response.strs_to_bulk_array (Utils.List.flatten_tuples pairs)
-      ]
-  in
+let stream_entry_to_arr (id, pairs) =
+  Response.ARRAY
+    [ Response.BULK (State.stream_id_to_string id)
+    ; Response.strs_to_bulk_array (Utils.List.flatten_tuples pairs)
+    ]
+;;
+
+let get_stream_as_arr key range state =
   match get state key with
-  | None -> Response.ARRAY []
+  | None -> Ok (Response.ARRAY [])
   | Some (STREAM entries) ->
     let res =
       List.filter ~f:(fun (id, _) -> Cmd.is_in_range id range) entries
-      |> List.map ~f:entry_to_res
+      |> List.map ~f:stream_entry_to_arr
       |> List.rev
     in
-    Response.ARRAY res
-  | Some _ -> Response.ERR "Operation against a key holding the wrong kind of value"
+    Ok (Response.ARRAY res)
+  | Some _ -> Error "Operation against a key holding the wrong kind of value"
+;;
+
+let handle_xrange key range state =
+  match get_stream_as_arr key range state with
+  | Ok res -> res
+  | Error e -> Response.ERR e
+;;
+
+let handle_xread queries state =
+  let res =
+    List.map
+      ~f:(fun (key, range) ->
+        get_stream_as_arr key (Cmd.GT range) state
+        |> Result.map ~f:(fun res -> Response.ARRAY [ Response.BULK key; res ]))
+      queries
+    |> Result.all
+    |> Result.map ~f:(fun e -> Response.ARRAY e)
+  in
+  match res with
+  | Ok res -> res
+  | Error e -> Response.ERR e
 ;;
 
 let handle_message_generic (cmd, _client_ic, _client_oc) ({ replication; _ } as state) =
@@ -180,6 +202,7 @@ let handle_message_generic (cmd, _client_ic, _client_oc) ({ replication; _ } as 
     res, state
   | Cmd.INVALID s -> Response.ERR s, state
   | Cmd.XRANGE (key, range) -> handle_xrange key range state, state
+  | Cmd.XREAD queries -> handle_xread queries state, state
   | cmd ->
     Response.ERR (Printf.sprintf "%s command is not supported" @@ Cmd.show cmd), state
 ;;

@@ -14,6 +14,7 @@ type stream_id =
 type 'a range =
   | BTW of 'a * 'a
   | GTE of 'a
+  | GT of 'a
   | LTE of 'a
   | ALL
 [@@deriving show { with_path = false }]
@@ -41,6 +42,7 @@ type t =
   (* key name, entry id, kv pairs *)
   | XADD of string * stream_id * (string * string) list
   | XRANGE of string * (int * int) range
+  | XREAD of (string * (int * int)) list
   | MASTER_SET of
       { set_key : string
       ; set_value : string
@@ -51,6 +53,7 @@ type t =
 let is_in_range a = function
   | BTW (lower, upper) -> Poly.compare a lower >= 0 && Poly.compare a upper <= 0
   | GTE lower -> Poly.compare a lower >= 0
+  | GT lower -> Poly.compare a lower > 0
   | LTE upper -> Poly.compare a upper <= 0
   | ALL -> true
 ;;

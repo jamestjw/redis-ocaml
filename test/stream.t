@@ -15,6 +15,7 @@ Start redis:
      [("temperature", "29"); ("humidity", "85")]))
   redis_ocaml_server: [INFO] Received command (XADD ("stream_key", (AUTO_SEQ 1526919030476),
      [("temperature", "30"); ("humidity", "87")]))
+  redis_ocaml_server: [INFO] Received command (XADD ("stream_key_2", (AUTO_SEQ 1726919030476), [("age", "10")]))
   redis_ocaml_server: [INFO] Received command (XADD ("stream_key", (EXPLICIT (1526919030474, 0)),
      [("temperature", "36"); ("humidity", "95")]))
   redis_ocaml_server: [INFO] Received command (XADD ("stream_key", (AUTO_SEQ 1526919030474),
@@ -28,6 +29,7 @@ Start redis:
   redis_ocaml_server: [INFO] Received command (XRANGE ("stream_key", (BTW ((1526919030474, 1), (1526919030476, 3)))))
   redis_ocaml_server: [INFO] Received command (XRANGE ("stream_key", (GTE (1526919030475, 0))))
   redis_ocaml_server: [INFO] Received command (XRANGE ("stream_key", (LTE (1526919030474, 9))))
+  redis_ocaml_server: [INFO] Received command (XREAD [("stream_key", (1526919030476, 2)); ("stream_key_2", (0, 0))])
 
 XADD with valid entry id:
   $ redis-cli XADD stream_key 0-* temperature 24 humidity 75
@@ -44,6 +46,8 @@ XADD with valid entry id:
   1526919030476-3
   $ redis-cli XADD stream_key 1526919030476-* temperature 30 humidity 87
   1526919030476-4
+  $ redis-cli XADD stream_key_2 1726919030476-* age 10
+  1726919030476-0
 
 XADD with invalid entry id:
   $ redis-cli XADD stream_key 1526919030474-0 temperature 36 humidity 95
@@ -125,5 +129,22 @@ XRANGE with upper:
   humidity
   91
 
+XREAD with one key:
+  $ redis-cli XREAD streams stream_key stream_key_2 1526919030476-2 0-0
+  stream_key
+  1526919030476-3
+  temperature
+  29
+  humidity
+  85
+  1526919030476-4
+  temperature
+  30
+  humidity
+  87
+  stream_key_2
+  1726919030476-0
+  age
+  10
 Kill redis:
   $ ./kill_redis.sh

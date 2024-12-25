@@ -176,6 +176,35 @@ let parse_xrange_cmd args =
   | _ -> Cmd.INVALID "wrong number of arguments for 'XRANGE' command"
 ;;
 
+let parse_xread_cmd args =
+  let rec parse_ranges ranges acc =
+    let explicit_id_regex = Str.regexp {|\([0-9]+\)\-\([0-9]+\)|} in
+    match ranges with
+    | [] -> Ok (List.rev acc)
+    | range :: ranges ->
+      if Str.string_match explicit_id_regex range 0
+      then (
+        let range =
+          ( Stdlib.int_of_string (Str.matched_group 1 range)
+          , Stdlib.int_of_string (Str.matched_group 2 range) )
+        in
+        parse_ranges ranges (range :: acc))
+      else Error "invalid range format"
+  in
+  match args with
+  | "streams" :: args when List.length args % 2 <> 0 ->
+    Cmd.INVALID
+      "Unbalanced 'xread' list of streams: for each stream key an ID or '$' must be \
+       specified."
+  | [ "streams" ] -> Cmd.INVALID "wrong number of arguments for 'XREAD' command"
+  | "streams" :: args ->
+    let stream_keys, ranges = List.split_n args (List.length args / 2) in
+    (match parse_ranges ranges [] with
+     | Error e -> Cmd.INVALID e
+     | Ok ranges -> Cmd.XREAD (List.zip_exn stream_keys ranges))
+  | _ -> Cmd.INVALID "wrong number of arguments for 'XREAD' command"
+;;
+
 let args_to_cmd args =
   match lower_fst args with
   | "ping" :: args -> parse_ping_cmd args
@@ -191,6 +220,7 @@ let args_to_cmd args =
   | "type" :: args -> parse_type_cmd args
   | "xadd" :: args -> parse_xadd_cmd args
   | "xrange" :: args -> parse_xrange_cmd args
+  | "xread" :: args -> parse_xread_cmd args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;
