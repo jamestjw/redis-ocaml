@@ -124,9 +124,18 @@ let parse_xadd_cmd args =
   in
   match args with
   | key :: id :: args ->
-    (match take_kv_pairs args [] with
-     | Ok pairs -> Cmd.XADD (key, id, pairs)
-     | Error e -> Cmd.INVALID e)
+    let explicit_id_regex = Str.regexp {|\([0-9]+\)\-\([0-9]+\)|} in
+    if Str.string_match explicit_id_regex id 0
+    then (
+      let id =
+        Cmd.EXPLICIT
+          ( Stdlib.int_of_string (Str.matched_group 1 id)
+          , Stdlib.int_of_string (Str.matched_group 2 id) )
+      in
+      match take_kv_pairs args [] with
+      | Ok pairs -> Cmd.XADD (key, id, pairs)
+      | Error e -> Cmd.INVALID e)
+    else Cmd.INVALID "invalid entry ID"
   | _ -> Cmd.INVALID "wrong number of arguments for 'XADD' command"
 ;;
 

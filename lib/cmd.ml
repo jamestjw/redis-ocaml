@@ -3,6 +3,12 @@ type set_timeout =
   | EX of int (* seconds until expiry *)
 [@@deriving show { with_path = false }]
 
+type stream_id =
+  | EXPLICIT of int * int (* <millisecondsTime>-<sequenceNumber> *)
+  | AUTO_SEQ of int (* auto generate the sequence number *)
+  | AUTO (* auto generate both *)
+[@@deriving show { with_path = false }]
+
 type t =
   | PING
   | MASTER_PING
@@ -24,7 +30,7 @@ type t =
   | INVALID of string
   | TYPE of string
   (* key name, entry id, kv pairs *)
-  | XADD of string * string * (string * string) list
+  | XADD of string * stream_id * (string * string) list
   | MASTER_SET of
       { set_key : string
       ; set_value : string

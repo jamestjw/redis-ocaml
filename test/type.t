@@ -4,7 +4,7 @@ Start redis:
   redis_ocaml_server: [INFO] Received command (TYPE "key")
   redis_ocaml_server: [INFO] Received command SET {set_key = "key"; set_value = "value"; set_timeout = None}
   redis_ocaml_server: [INFO] Received command (TYPE "key")
-  redis_ocaml_server: [INFO] Received command (XADD ("stream_key", "1526919030474-0",
+  redis_ocaml_server: [INFO] Received command (XADD ("stream_key", (EXPLICIT (1526919030474, 0)),
      [("temperature", "36"); ("humidity", "95")]))
   redis_ocaml_server: [INFO] Received command (TYPE "stream_key")
 

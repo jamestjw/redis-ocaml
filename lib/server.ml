@@ -230,10 +230,30 @@ let handle_message_for_master
       Response.QUIET, state)
   | Cmd.INVALID s -> Response.ERR s, state
   | Cmd.XADD (key, id, pairs) ->
+    let id =
+      match id with
+      | Cmd.EXPLICIT (ms, seq) -> ms, seq
+      | _ -> failwith "can't handle this yet"
+    in
+    let id_str = State.stream_id_to_string id in
+    let validate_id curr_id last_id =
+      let ms1, seq1 = curr_id in
+      let ms2, seq2 = last_id in
+      (* Either we have a more recent timestamp, or the same timestamp but
+         a newer sequence number *)
+      ms1 > ms2 || (ms1 = ms2 && seq1 > seq2)
+    in
     (match get state key with
-     | Some (STREAM entries) ->
-       Response.BULK id, set state key (STREAM (entries @ [ id, pairs ]))
-     | None -> Response.BULK id, set state key (STREAM [ id, pairs ])
+     | _ when not @@ validate_id id (0, 0) ->
+       Response.ERR "The ID specified in XADD must be greater than 0-0", state
+     | Some (STREAM []) -> failwith "impossible"
+     | Some (STREAM ((prev_id, _) :: _ as entries)) when validate_id id prev_id ->
+       Response.BULK id_str, set state key (STREAM ((id, pairs) :: entries))
+     | Some (STREAM _) ->
+       ( Response.ERR
+           "The ID specified in XADD is equal or smaller than the target stream top item"
+       , state )
+     | None -> Response.BULK id_str, set state key (STREAM [ id, pairs ])
      | Some _ -> Response.ERR "type error", state)
   | other -> handle_message_generic (other, client_ic, client_oc) state
 ;;

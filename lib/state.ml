@@ -17,7 +17,8 @@ type replication =
       }
 
 (* Each entry has a string ID along with a list of KV pairs *)
-type stream = (string * (string * string) list) list
+type stream_id = int * int
+type stream = (stream_id * (string * string) list) list
 
 type store_value =
   | STR of string * Int63.t option
@@ -148,3 +149,4 @@ let get_replicas { replication; _ } =
 ;;
 
 let get_store_sz { store; _ } = StringMap.cardinal store
+let stream_id_to_string (ms, seq) = Printf.sprintf "%d-%d" ms seq
