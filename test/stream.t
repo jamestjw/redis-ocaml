@@ -29,8 +29,11 @@ Start redis:
   redis_ocaml_server: [INFO] Received command (XRANGE ("stream_key", (BTW ((1526919030474, 1), (1526919030476, 3)))))
   redis_ocaml_server: [INFO] Received command (XRANGE ("stream_key", (GTE (1526919030475, 0))))
   redis_ocaml_server: [INFO] Received command (XRANGE ("stream_key", (LTE (1526919030474, 9))))
-  redis_ocaml_server: [INFO] Received command (XREAD [("stream_key", (1526919030476, 2)); ("stream_key_2", (0, 0))])
-  redis_ocaml_server: [INFO] Received command (XREAD [("unk_key", (0, 0))])
+  redis_ocaml_server: [INFO] Received command XREAD {block = None;
+    queries = [("stream_key", (1526919030476, 2)); ("stream_key_2", (0, 0))]}
+  redis_ocaml_server: [INFO] Received command XREAD {block = None; queries = [("unk_key", (0, 0))]}
+  redis_ocaml_server: [INFO] Received command XREAD {block = (Some 200); queries = [("async", (0, 0))]}
+  redis_ocaml_server: [INFO] Received command (XADD ("async", (EXPLICIT (0, 1)), [("added", "later")]))
 
 XADD with valid entry id:
   $ redis-cli XADD stream_key 0-* temperature 24 humidity 75
@@ -151,6 +154,15 @@ XREAD with multiple keys:
 XREAD with key that does not exist:
   $ redis-cli XREAD streams unk_key 0-0
   
+
+XREAD with block:
+  $ redis-cli XREAD block 200 streams async 0-0 &
+  async
+  0-1
+  added
+  later
+  $ redis-cli XADD async 0-1 added later
+  0-1
 
 Kill redis:
   $ ./kill_redis.sh

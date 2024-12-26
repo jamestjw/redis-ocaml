@@ -42,7 +42,10 @@ type t =
   (* key name, entry id, kv pairs *)
   | XADD of string * stream_id * (string * string) list
   | XRANGE of string * (int * int) range
-  | XREAD of (string * (int * int)) list
+  | XREAD of
+      { block : int option
+      ; queries : (string * (int * int)) list
+      }
   | MASTER_SET of
       { set_key : string
       ; set_value : string

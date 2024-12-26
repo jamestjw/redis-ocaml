@@ -18,7 +18,8 @@ type replication =
 
 (* Each entry has a string ID along with a list of KV pairs *)
 type stream_id = int * int
-type stream = (stream_id * (string * string) list) list
+type stream_entry = stream_id * (string * string) list
+type stream = stream_entry list
 
 type store_value =
   | STR of string * Int63.t option
@@ -29,6 +30,7 @@ type t =
     store : store_value StringMap.t
   ; configs : string StringMap.t
   ; replication : replication
+  ; new_stream_entry_cond : (string * stream_entry) Lwt_condition.t
   }
 
 (* Either pass bytes or file dir and name *)
@@ -108,7 +110,7 @@ let mk_state ~rdb_source ~replication =
          Logs.warn (fun m -> m "Couldn't parse RDB file: %s" e);
          StringMap.empty)
   in
-  { store; configs; replication }
+  { store; configs; replication; new_stream_entry_cond = Lwt_condition.create () }
 ;;
 
 let get_replication_offset { replication; _ } =

@@ -150,7 +150,35 @@ let handle_xrange key range state =
   | Error e -> Response.ERR e
 ;;
 
-let handle_xread queries state =
+let handle_xread queries block ({ new_stream_entry_cond; _ } as state) oc =
+  let query_map = StringMap.of_list queries in
+  let rec listen_for_new () =
+    let%lwt key, (id, kv_pairs) = Lwt_condition.wait new_stream_entry_cond in
+    match StringMap.find_opt key query_map with
+    (* See if the key is in the map and if its ID is recent enough *)
+    | Some query_id when Cmd.is_in_range id (Cmd.GT query_id) ->
+      Lwt.return_some
+        (Response.ARRAY
+           [ Response.ARRAY
+               [ Response.BULK key
+               ; Response.ARRAY [ stream_entry_to_arr (id, kv_pairs) ]
+               ]
+           ])
+    | _ -> listen_for_new ()
+  in
+  let wait_for_timeout timeout =
+    let%lwt () = Lwt_unix.sleep (Float.of_int timeout /. 1000.) in
+    Lwt.return_none
+  in
+  let handle_timeout timeout =
+    let%lwt resp =
+      match%lwt Lwt.pick [ listen_for_new (); wait_for_timeout timeout ] with
+      | None -> Lwt.return Response.NULL_BULK
+      | Some resp -> Lwt.return resp
+    in
+    let%lwt _ = Lwt_io.write oc (Response.serialize resp) in
+    Lwt.return_unit
+  in
   let res =
     List.map
       ~f:(fun (key, range) ->
@@ -164,12 +192,17 @@ let handle_xread queries state =
               Response.ARRAY [ Response.BULK k; Response.ARRAY vals ]))
   in
   match res with
-  | Ok [] -> Response.NULL_BULK
+  | Ok [] ->
+    (match block with
+     | None -> Response.NULL_BULK
+     | Some timeout ->
+       Lwt.async (fun () -> handle_timeout timeout);
+       Response.QUIET)
   | Ok res -> Response.ARRAY res
   | Error e -> Response.ERR e
 ;;
 
-let handle_message_generic (cmd, _client_ic, _client_oc) ({ replication; _ } as state) =
+let handle_message_generic (cmd, _client_ic, client_oc) ({ replication; _ } as state) =
   match cmd with
   | Cmd.ECHO s -> Response.BULK s, state
   | Cmd.GET k ->
@@ -206,7 +239,7 @@ let handle_message_generic (cmd, _client_ic, _client_oc) ({ replication; _ } as 
     res, state
   | Cmd.INVALID s -> Response.ERR s, state
   | Cmd.XRANGE (key, range) -> handle_xrange key range state, state
-  | Cmd.XREAD queries -> handle_xread queries state, state
+  | Cmd.XREAD { block; queries } -> handle_xread queries block state client_oc, state
   | cmd ->
     Response.ERR (Printf.sprintf "%s command is not supported" @@ Cmd.show cmd), state
 ;;
@@ -230,7 +263,7 @@ let handle_message_for_replica { cmd; num_bytes; ic; oc; _ } state =
 
 let handle_message_for_master
   { cmd; ic = client_ic; oc = client_oc; num_bytes; id }
-  ({ replication; _ } as state)
+  ({ replication; new_stream_entry_cond; _ } as state)
   =
   match cmd with
   | Cmd.PING -> Response.SIMPLE "PONG", state
@@ -314,17 +347,26 @@ let handle_message_for_master
             timestamp, then we just use that instead *)
          | Some (ms2, seq2) -> Ok (ms2, seq2 + 1))
     in
+    let announce_new_entry id =
+      Lwt_condition.broadcast new_stream_entry_cond (key, (id, pairs))
+      (* Lwt.async (fun () -> *)
+      (*   let%lwt () = Lwt_unix.sleep 0.3 in *)
+      (*   Lwt_condition.broadcast new_stream_entry_cond (key, (id, pairs)); *)
+      (*   Lwt.return_unit) *)
+    in
     (match get state key with
      | Some (STREAM []) -> failwith "impossible"
      | Some (STREAM ((prev_id, _) :: _ as entries)) ->
        (match id_to_ints id (Some prev_id) with
         | Ok id ->
+          announce_new_entry id;
           ( Response.BULK (State.stream_id_to_string id)
           , set state key (STREAM ((id, pairs) :: entries)) )
         | Error e -> Response.ERR e, state)
      | None ->
        (match id_to_ints id None with
         | Ok id ->
+          announce_new_entry id;
           ( Response.BULK (State.stream_id_to_string id)
           , set state key (STREAM [ id, pairs ]) )
         | Error e -> Response.ERR e, state)

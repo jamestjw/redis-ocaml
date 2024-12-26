@@ -191,18 +191,28 @@ let parse_xread_cmd args =
         parse_ranges ranges (range :: acc))
       else Error "invalid range format"
   in
-  match args with
-  | "streams" :: args when List.length args % 2 <> 0 ->
+  let args_block =
+    match args with
+    | "block" :: ms :: rest ->
+      (match int_of_string_opt ms with
+       | Some ms when ms < 0 -> Error "block timeout cannot be negative"
+       | Some ms -> Ok (rest, Some ms)
+       | None -> Error "block time has to be an integer")
+    | _ -> Ok (args, None)
+  in
+  match args_block with
+  | Ok ("streams" :: args, _) when List.length args % 2 <> 0 ->
     Cmd.INVALID
       "Unbalanced 'xread' list of streams: for each stream key an ID or '$' must be \
        specified."
-  | [ "streams" ] -> Cmd.INVALID "wrong number of arguments for 'XREAD' command"
-  | "streams" :: args ->
+  | Ok ([ "streams" ], _) -> Cmd.INVALID "wrong number of arguments for 'XREAD' command"
+  | Ok ("streams" :: args, block) ->
     let stream_keys, ranges = List.split_n args (List.length args / 2) in
     (match parse_ranges ranges [] with
      | Error e -> Cmd.INVALID e
-     | Ok ranges -> Cmd.XREAD (List.zip_exn stream_keys ranges))
-  | _ -> Cmd.INVALID "wrong number of arguments for 'XREAD' command"
+     | Ok ranges -> Cmd.XREAD { block; queries = List.zip_exn stream_keys ranges })
+  | Error e -> Cmd.INVALID e
+  | _ -> Cmd.INVALID "invalid arguments for 'XREAD' command"
 ;;
 
 let args_to_cmd args =
