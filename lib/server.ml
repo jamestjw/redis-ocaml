@@ -170,9 +170,14 @@ let handle_xread queries block ({ new_stream_entry_cond; _ } as state) oc =
     let%lwt () = Lwt_unix.sleep (Float.of_int timeout /. 1000.) in
     Lwt.return_none
   in
-  let handle_timeout timeout =
+  let handle_block timeout =
+    let promises =
+      if timeout > 0
+      then [ listen_for_new (); wait_for_timeout timeout ]
+      else [ listen_for_new () ]
+    in
     let%lwt resp =
-      match%lwt Lwt.pick [ listen_for_new (); wait_for_timeout timeout ] with
+      match%lwt Lwt.pick promises with
       | None -> Lwt.return Response.NULL_BULK
       | Some resp -> Lwt.return resp
     in
@@ -196,7 +201,7 @@ let handle_xread queries block ({ new_stream_entry_cond; _ } as state) oc =
     (match block with
      | None -> Response.NULL_BULK
      | Some timeout ->
-       Lwt.async (fun () -> handle_timeout timeout);
+       Lwt.async (fun () -> handle_block timeout);
        Response.QUIET)
   | Ok res -> Response.ARRAY res
   | Error e -> Response.ERR e
