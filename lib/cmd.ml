@@ -52,6 +52,7 @@ type t =
       ; queries : (string * (int * int) freshness) list
       }
   | INCR of string
+  | MULTI
   | MASTER_SET of
       { set_key : string
       ; set_value : string

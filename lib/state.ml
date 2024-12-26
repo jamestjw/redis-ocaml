@@ -31,6 +31,7 @@ type t =
   ; configs : string StringMap.t
   ; replication : replication
   ; new_stream_entry_cond : (string * stream_entry) Lwt_condition.t
+  ; active_transactions : Cmd.t list StringMap.t
   }
 
 (* Either pass bytes or file dir and name *)
@@ -110,7 +111,12 @@ let mk_state ~rdb_source ~replication =
          Logs.warn (fun m -> m "Couldn't parse RDB file: %s" e);
          StringMap.empty)
   in
-  { store; configs; replication; new_stream_entry_cond = Lwt_condition.create () }
+  { store
+  ; configs
+  ; replication
+  ; new_stream_entry_cond = Lwt_condition.create ()
+  ; active_transactions = StringMap.empty
+  }
 ;;
 
 let get_replication_offset { replication; _ } =

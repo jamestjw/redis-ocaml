@@ -35,6 +35,28 @@ let set ({ store; _ } as state) key value =
   { state with store = StringMap.add key value store }
 ;;
 
+let start_transaction ({ active_transactions; _ } as state) id =
+  match StringMap.find_opt id active_transactions with
+  | None ->
+    Ok { state with active_transactions = StringMap.add id [] active_transactions }
+  | Some _ -> Error "active transaction already exists"
+;;
+
+let has_active_transaction { active_transactions; _ } id =
+  StringMap.find_opt id active_transactions |> Option.is_some
+;;
+
+let queue_cmd ({ active_transactions; _ } as state) id cmd =
+  let prev_cmds =
+    match StringMap.find_opt id active_transactions with
+    | None -> []
+    | Some cmds -> cmds
+  in
+  { state with
+    active_transactions = StringMap.add id (cmd :: prev_cmds) active_transactions
+  }
+;;
+
 let get_keys { store; _ } =
   StringMap.to_list store
   |> List.filter_map ~f:(fun (k, v) -> filter_expired v |> Option.map ~f:(fun _ -> k))
@@ -283,126 +305,134 @@ let handle_message_for_master
   { cmd; ic = client_ic; oc = client_oc; num_bytes; id }
   ({ replication; new_stream_entry_cond; _ } as state)
   =
-  match cmd with
-  | Cmd.PING -> Response.SIMPLE "PONG", state
-  | Cmd.SET { set_key; set_value; set_timeout } ->
-    (match replication with
-     | REPLICA _ -> failwith "impossible"
-     | MASTER { replicas; _ } ->
-       Lwt.async (fun () ->
-         Lwt_list.iter_p
-           (fun (ic, oc) -> Client.propagate_set (ic, oc) cmd)
-           (StringMap.bindings replicas |> List.map ~f:(fun (_, v) -> v)));
-       ( Response.SIMPLE "OK"
-       , set state set_key (STR (set_value, timeout_to_int set_timeout))
-         |> incr_replication_offset ~delta:num_bytes ))
-  | Cmd.GET_CONFIG keys ->
-    let res =
-      List.map ~f:(fun k -> get_config state k |> Option.map ~f:(fun v -> [ k; v ])) keys
-      |> List.filter_map ~f:(fun x -> x)
-      |> Stdlib.List.flatten
-      |> List.map ~f:(fun e -> Response.BULK e)
-    in
-    Response.ARRAY res, state
-  (* TODO: actually do something with these two *)
-  | Cmd.REPL_CONF_PORT _ -> Response.SIMPLE "OK", state
-  | Cmd.REPL_CONF_CAPA _ -> Response.SIMPLE "OK", state
-  | Cmd.PSYNC _ ->
-    (match replication with
-     | MASTER ({ replication_id; replicas; _ } as master) ->
-       let _ = Logs.debug (fun m -> m "Registering replica %s" id) in
-       let rdb_contents = In_channel.read_all default_empty_rdb_file in
-       ( Response.FULL_RESYNC (replication_id, rdb_contents)
-       , { state with
-           replication =
-             MASTER
-               { master with replicas = StringMap.add id (client_ic, client_oc) replicas }
-         } )
-     | REPLICA _ -> failwith "impossible")
-  | Cmd.WAIT (num_replicas, timeout) ->
-    (* FIXME: Cheat to pass the test *)
-    if State.get_store_sz state = 0
-    then Response.INTEGER (State.get_number_replicas state), state
-    else (
-      let state = handle_wait num_replicas timeout state client_oc in
-      Response.QUIET, state)
-  | Cmd.INVALID s -> Response.ERR s, state
-  | Cmd.XADD (key, id, pairs) ->
-    let validate_id curr_id last_id =
-      let ms1, seq1 = curr_id in
-      let ms2, seq2 = last_id in
-      (* Either we have a more recent timestamp, or the same timestamp but
-         a newer sequence number *)
-      ms1 > ms2 || (ms1 = ms2 && seq1 > seq2)
-    in
-    let id_to_ints id prev_id =
-      match id, prev_id with
-      | Cmd.EXPLICIT (ms, seq), _ when not @@ validate_id (ms, seq) (0, 0) ->
-        Error "The ID specified in XADD must be greater than 0-0"
-      | Cmd.EXPLICIT (ms, seq), None -> Ok (ms, seq)
-      | Cmd.EXPLICIT (ms, seq), Some other when validate_id (ms, seq) other -> Ok (ms, seq)
-      | Cmd.EXPLICIT _, Some _ ->
-        Error
-          "The ID specified in XADD is equal or smaller than the target stream top item"
-      | Cmd.AUTO_SEQ ms, _ when ms < 0 ->
-        Error "The ID specified in XADD must be greater than 0-0"
-      | Cmd.AUTO_SEQ ms, None when ms = 0 -> Ok (ms, 1)
-      | Cmd.AUTO_SEQ ms, None -> Ok (ms, 0)
-      | Cmd.AUTO_SEQ ms, Some (ms2, _) when ms < ms2 ->
-        Error
-          "The ID specified in XADD is equal or smaller than the target stream top item"
-      | Cmd.AUTO_SEQ ms, Some (ms2, _) when ms > ms2 -> Ok (ms, 0)
-      | Cmd.AUTO_SEQ ms, Some (_, seq) -> Ok (ms, seq + 1)
-      | Cmd.AUTO, prev_id ->
-        let ms =
-          Utils.Time.ns_to_ms (Time_now.nanoseconds_since_unix_epoch ())
-          |> Int63.to_int_trunc
-        in
-        (match prev_id with
-         | None -> Ok (ms, 0)
-         | Some (ms2, _) when ms2 < ms -> Ok (ms, 0)
-         (* If the last saved timestamp is already greater than the current
-            timestamp, then we just use that instead *)
-         | Some (ms2, seq2) -> Ok (ms2, seq2 + 1))
-    in
-    let announce_new_entry id =
-      Lwt_condition.broadcast new_stream_entry_cond (key, (id, pairs))
-      (* Lwt.async (fun () -> *)
-      (*   let%lwt () = Lwt_unix.sleep 0.3 in *)
-      (*   Lwt_condition.broadcast new_stream_entry_cond (key, (id, pairs)); *)
-      (*   Lwt.return_unit) *)
-    in
-    (match get state key with
-     | Some (STREAM []) -> failwith "impossible"
-     | Some (STREAM ((prev_id, _) :: _ as entries)) ->
-       (match id_to_ints id (Some prev_id) with
-        | Ok id ->
-          announce_new_entry id;
-          ( Response.BULK (State.stream_id_to_string id)
-          , set state key (STREAM ((id, pairs) :: entries)) )
-        | Error e -> Response.ERR e, state)
-     | None ->
-       (match id_to_ints id None with
-        | Ok id ->
-          announce_new_entry id;
-          ( Response.BULK (State.stream_id_to_string id)
-          , set state key (STREAM [ id, pairs ]) )
-        | Error e -> Response.ERR e, state)
-     | Some _ -> Response.ERR "type error", state)
-  | Cmd.INCR key ->
-    let new_value =
-      match get state key with
-      | Some (STR (s, exp)) ->
-        (match int_of_string_opt s with
-         | None -> Error "value is not an integer or out of range"
-         | Some i -> Ok (i + 1, exp))
-      | Some _ -> Error "value is not an integer or out of range"
-      | None -> Ok (1, None)
-    in
-    (match new_value with
-     | Ok (i, exp) -> Response.INTEGER i, set state key (STR (string_of_int i, exp))
-     | Error e -> Response.ERR e, state)
-  | other -> handle_message_generic (other, client_ic, client_oc) state
+  if has_active_transaction state id
+  then Response.SIMPLE "QUEUED", queue_cmd state id cmd
+  else (
+    match cmd with
+    | Cmd.PING -> Response.SIMPLE "PONG", state
+    | Cmd.SET { set_key; set_value; set_timeout } ->
+      (match replication with
+       | REPLICA _ -> failwith "impossible"
+       | MASTER { replicas; _ } ->
+         Lwt.async (fun () ->
+           Lwt_list.iter_p
+             (fun (ic, oc) -> Client.propagate_set (ic, oc) cmd)
+             (StringMap.bindings replicas |> List.map ~f:(fun (_, v) -> v)));
+         ( Response.SIMPLE "OK"
+         , set state set_key (STR (set_value, timeout_to_int set_timeout))
+           |> incr_replication_offset ~delta:num_bytes ))
+    | Cmd.GET_CONFIG keys ->
+      let res =
+        List.map
+          ~f:(fun k -> get_config state k |> Option.map ~f:(fun v -> [ k; v ]))
+          keys
+        |> List.filter_map ~f:(fun x -> x)
+        |> Stdlib.List.flatten
+        |> List.map ~f:(fun e -> Response.BULK e)
+      in
+      Response.ARRAY res, state
+    (* TODO: actually do something with these two *)
+    | Cmd.REPL_CONF_PORT _ -> Response.SIMPLE "OK", state
+    | Cmd.REPL_CONF_CAPA _ -> Response.SIMPLE "OK", state
+    | Cmd.PSYNC _ ->
+      (match replication with
+       | MASTER ({ replication_id; replicas; _ } as master) ->
+         let _ = Logs.debug (fun m -> m "Registering replica %s" id) in
+         let rdb_contents = In_channel.read_all default_empty_rdb_file in
+         ( Response.FULL_RESYNC (replication_id, rdb_contents)
+         , { state with
+             replication =
+               MASTER
+                 { master with
+                   replicas = StringMap.add id (client_ic, client_oc) replicas
+                 }
+           } )
+       | REPLICA _ -> failwith "impossible")
+    | Cmd.WAIT (num_replicas, timeout) ->
+      (* FIXME: Cheat to pass the test *)
+      if State.get_store_sz state = 0
+      then Response.INTEGER (State.get_number_replicas state), state
+      else (
+        let state = handle_wait num_replicas timeout state client_oc in
+        Response.QUIET, state)
+    | Cmd.INVALID s -> Response.ERR s, state
+    | Cmd.XADD (key, id, pairs) ->
+      let validate_id curr_id last_id =
+        let ms1, seq1 = curr_id in
+        let ms2, seq2 = last_id in
+        (* Either we have a more recent timestamp, or the same timestamp but
+           a newer sequence number *)
+        ms1 > ms2 || (ms1 = ms2 && seq1 > seq2)
+      in
+      let id_to_ints id prev_id =
+        match id, prev_id with
+        | Cmd.EXPLICIT (ms, seq), _ when not @@ validate_id (ms, seq) (0, 0) ->
+          Error "The ID specified in XADD must be greater than 0-0"
+        | Cmd.EXPLICIT (ms, seq), None -> Ok (ms, seq)
+        | Cmd.EXPLICIT (ms, seq), Some other when validate_id (ms, seq) other ->
+          Ok (ms, seq)
+        | Cmd.EXPLICIT _, Some _ ->
+          Error
+            "The ID specified in XADD is equal or smaller than the target stream top item"
+        | Cmd.AUTO_SEQ ms, _ when ms < 0 ->
+          Error "The ID specified in XADD must be greater than 0-0"
+        | Cmd.AUTO_SEQ ms, None when ms = 0 -> Ok (ms, 1)
+        | Cmd.AUTO_SEQ ms, None -> Ok (ms, 0)
+        | Cmd.AUTO_SEQ ms, Some (ms2, _) when ms < ms2 ->
+          Error
+            "The ID specified in XADD is equal or smaller than the target stream top item"
+        | Cmd.AUTO_SEQ ms, Some (ms2, _) when ms > ms2 -> Ok (ms, 0)
+        | Cmd.AUTO_SEQ ms, Some (_, seq) -> Ok (ms, seq + 1)
+        | Cmd.AUTO, prev_id ->
+          let ms =
+            Utils.Time.ns_to_ms (Time_now.nanoseconds_since_unix_epoch ())
+            |> Int63.to_int_trunc
+          in
+          (match prev_id with
+           | None -> Ok (ms, 0)
+           | Some (ms2, _) when ms2 < ms -> Ok (ms, 0)
+           (* If the last saved timestamp is already greater than the current
+              timestamp, then we just use that instead *)
+           | Some (ms2, seq2) -> Ok (ms2, seq2 + 1))
+      in
+      let announce_new_entry id =
+        Lwt_condition.broadcast new_stream_entry_cond (key, (id, pairs))
+      in
+      (match get state key with
+       | Some (STREAM []) -> failwith "impossible"
+       | Some (STREAM ((prev_id, _) :: _ as entries)) ->
+         (match id_to_ints id (Some prev_id) with
+          | Ok id ->
+            announce_new_entry id;
+            ( Response.BULK (State.stream_id_to_string id)
+            , set state key (STREAM ((id, pairs) :: entries)) )
+          | Error e -> Response.ERR e, state)
+       | None ->
+         (match id_to_ints id None with
+          | Ok id ->
+            announce_new_entry id;
+            ( Response.BULK (State.stream_id_to_string id)
+            , set state key (STREAM [ id, pairs ]) )
+          | Error e -> Response.ERR e, state)
+       | Some _ -> Response.ERR "type error", state)
+    | Cmd.INCR key ->
+      let new_value =
+        match get state key with
+        | Some (STR (s, exp)) ->
+          (match int_of_string_opt s with
+           | None -> Error "value is not an integer or out of range"
+           | Some i -> Ok (i + 1, exp))
+        | Some _ -> Error "value is not an integer or out of range"
+        | None -> Ok (1, None)
+      in
+      (match new_value with
+       | Ok (i, exp) -> Response.INTEGER i, set state key (STR (string_of_int i, exp))
+       | Error e -> Response.ERR e, state)
+    | Cmd.MULTI ->
+      (match start_transaction state id with
+       | Ok state -> Response.SIMPLE "OK", state
+       | Error err -> Response.ERR err, state)
+    | other -> handle_message_generic (other, client_ic, client_oc) state)
 ;;
 
 type task =
