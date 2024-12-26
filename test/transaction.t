@@ -4,12 +4,18 @@ Start redis:
   redis_ocaml_server: [INFO] Received command MULTI
   redis_ocaml_server: [INFO] Received command SET {set_key = "foo"; set_value = "41"; set_timeout = None}
   redis_ocaml_server: [INFO] Received command (INCR "foo")
+  redis_ocaml_server: [INFO] Received command EXEC
 
 Start and queue commands in transaction:
   $ printf 'MULTI\nSET foo 41\nINCR foo' | redis-cli 
   OK
   QUEUED
   QUEUED
+
+EXEC without starting transaction:
+  $ redis-cli EXEC
+  ERR EXEC without MULTI
+  
 
 Kill redis:
   $ ./kill_redis.sh

@@ -228,6 +228,11 @@ let parse_multi_cmd = function
   | _ -> Cmd.INVALID "'MULTI' takes no args"
 ;;
 
+let parse_exec_cmd = function
+  | [] -> Cmd.EXEC
+  | _ -> Cmd.INVALID "'MULTI' takes no args"
+;;
+
 let args_to_cmd args =
   match lower_fst args with
   | "ping" :: args -> parse_ping_cmd args
@@ -246,6 +251,7 @@ let args_to_cmd args =
   | "xread" :: args -> parse_xread_cmd args
   | "incr" :: args -> parse_incr_cmd args
   | "multi" :: args -> parse_multi_cmd args
+  | "exec" :: args -> parse_exec_cmd args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;

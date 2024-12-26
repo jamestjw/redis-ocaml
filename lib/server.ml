@@ -57,6 +57,14 @@ let queue_cmd ({ active_transactions; _ } as state) id cmd =
   }
 ;;
 
+let get_queued_cmds { active_transactions; _ } id =
+  StringMap.find_opt id active_transactions |> Option.map ~f:List.rev
+;;
+
+let rm_transaction ({ active_transactions; _ } as state) id =
+  { state with active_transactions = StringMap.remove id active_transactions }
+;;
+
 let get_keys { store; _ } =
   StringMap.to_list store
   |> List.filter_map ~f:(fun (k, v) -> filter_expired v |> Option.map ~f:(fun _ -> k))
@@ -305,7 +313,7 @@ let handle_message_for_master
   { cmd; ic = client_ic; oc = client_oc; num_bytes; id }
   ({ replication; new_stream_entry_cond; _ } as state)
   =
-  if has_active_transaction state id
+  if (not @@ Cmd.is_txn_cmd cmd) && has_active_transaction state id
   then Response.SIMPLE "QUEUED", queue_cmd state id cmd
   else (
     match cmd with
@@ -432,6 +440,10 @@ let handle_message_for_master
       (match start_transaction state id with
        | Ok state -> Response.SIMPLE "OK", state
        | Error err -> Response.ERR err, state)
+    | Cmd.EXEC ->
+      (match get_queued_cmds state id with
+       | Some _cmds -> failwith ""
+       | None -> Response.ERR "EXEC without MULTI", state)
     | other -> handle_message_generic (other, client_ic, client_oc) state)
 ;;
 

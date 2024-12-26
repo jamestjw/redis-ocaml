@@ -53,6 +53,7 @@ type t =
       }
   | INCR of string
   | MULTI
+  | EXEC
   | MASTER_SET of
       { set_key : string
       ; set_value : string
@@ -66,4 +67,9 @@ let is_in_range a = function
   | GT lower -> Poly.compare a lower > 0
   | LTE upper -> Poly.compare a upper <= 0
   | ALL -> true
+;;
+
+let is_txn_cmd = function
+  | MULTI | EXEC -> true
+  | _ -> false
 ;;
