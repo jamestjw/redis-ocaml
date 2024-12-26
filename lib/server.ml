@@ -309,12 +309,12 @@ let handle_message_for_replica { cmd; num_bytes; ic; oc; _ } state =
   res, incr_replication_offset state ~delta:num_bytes
 ;;
 
-let handle_message_for_master
+let rec handle_message_for_master
   { cmd; ic = client_ic; oc = client_oc; num_bytes; id }
   ({ replication; new_stream_entry_cond; _ } as state)
   =
   if (not @@ Cmd.is_txn_cmd cmd) && has_active_transaction state id
-  then Response.SIMPLE "QUEUED", queue_cmd state id cmd
+  then Response.SIMPLE "QUEUED", queue_cmd state id (cmd, num_bytes)
   else (
     match cmd with
     | Cmd.PING -> Response.SIMPLE "PONG", state
@@ -442,7 +442,20 @@ let handle_message_for_master
        | Error err -> Response.ERR err, state)
     | Cmd.EXEC ->
       (match get_queued_cmds state id with
-       | Some _cmds -> failwith ""
+       | Some cmds ->
+         let resps, state =
+           List.fold
+             ~init:([], rm_transaction state id)
+             ~f:(fun (resps, state) (cmd, num_bytes) ->
+               let res, state =
+                 handle_message_for_master
+                   { cmd; ic = client_ic; oc = client_oc; num_bytes; id }
+                   state
+               in
+               res :: resps, state)
+             cmds
+         in
+         Response.ARRAY (List.rev resps), state
        | None -> Response.ERR "EXEC without MULTI", state)
     | other -> handle_message_generic (other, client_ic, client_oc) state)
 ;;

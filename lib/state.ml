@@ -31,7 +31,7 @@ type t =
   ; configs : string StringMap.t
   ; replication : replication
   ; new_stream_entry_cond : (string * stream_entry) Lwt_condition.t
-  ; active_transactions : Cmd.t list StringMap.t
+  ; active_transactions : (Cmd.t * int) list StringMap.t
   }
 
 (* Either pass bytes or file dir and name *)
