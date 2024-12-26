@@ -133,20 +133,20 @@ let stream_entry_to_arr (id, pairs) =
 
 let get_stream_as_arr key range state =
   match get state key with
-  | None -> Ok (Response.ARRAY [])
+  | None -> Ok []
   | Some (STREAM entries) ->
     let res =
       List.filter ~f:(fun (id, _) -> Cmd.is_in_range id range) entries
       |> List.map ~f:stream_entry_to_arr
       |> List.rev
     in
-    Ok (Response.ARRAY res)
+    Ok res
   | Some _ -> Error "Operation against a key holding the wrong kind of value"
 ;;
 
 let handle_xrange key range state =
   match get_stream_as_arr key range state with
-  | Ok res -> res
+  | Ok res -> Response.ARRAY res
   | Error e -> Response.ERR e
 ;;
 
@@ -154,14 +154,18 @@ let handle_xread queries state =
   let res =
     List.map
       ~f:(fun (key, range) ->
-        get_stream_as_arr key (Cmd.GT range) state
-        |> Result.map ~f:(fun res -> Response.ARRAY [ Response.BULK key; res ]))
+        get_stream_as_arr key (Cmd.GT range) state |> Result.map ~f:(fun res -> key, res))
       queries
     |> Result.all
-    |> Result.map ~f:(fun e -> Response.ARRAY e)
+    |> Result.map ~f:(List.filter ~f:(fun (_, vals) -> not @@ List.is_empty vals))
+    |> Result.map
+         ~f:
+           (List.map ~f:(fun (k, vals) ->
+              Response.ARRAY [ Response.BULK k; Response.ARRAY vals ]))
   in
   match res with
-  | Ok res -> res
+  | Ok [] -> Response.NULL_BULK
+  | Ok res -> Response.ARRAY res
   | Error e -> Response.ERR e
 ;;
 

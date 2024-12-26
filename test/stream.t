@@ -30,6 +30,7 @@ Start redis:
   redis_ocaml_server: [INFO] Received command (XRANGE ("stream_key", (GTE (1526919030475, 0))))
   redis_ocaml_server: [INFO] Received command (XRANGE ("stream_key", (LTE (1526919030474, 9))))
   redis_ocaml_server: [INFO] Received command (XREAD [("stream_key", (1526919030476, 2)); ("stream_key_2", (0, 0))])
+  redis_ocaml_server: [INFO] Received command (XREAD [("unk_key", (0, 0))])
 
 XADD with valid entry id:
   $ redis-cli XADD stream_key 0-* temperature 24 humidity 75
@@ -129,7 +130,7 @@ XRANGE with upper:
   humidity
   91
 
-XREAD with one key:
+XREAD with multiple keys:
   $ redis-cli XREAD streams stream_key stream_key_2 1526919030476-2 0-0
   stream_key
   1526919030476-3
@@ -146,5 +147,10 @@ XREAD with one key:
   1726919030476-0
   age
   10
+
+XREAD with key that does not exist:
+  $ redis-cli XREAD streams unk_key 0-0
+  
+
 Kill redis:
   $ ./kill_redis.sh
