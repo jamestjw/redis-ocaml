@@ -457,6 +457,10 @@ let rec handle_message_for_master
          in
          Response.ARRAY (List.rev resps), state
        | None -> Response.ERR "EXEC without MULTI", state)
+    | Cmd.DISCARD ->
+      if has_active_transaction state id
+      then Response.SIMPLE "OK", rm_transaction state id
+      else Response.ERR "DISCARD without MULTI", state
     | other -> handle_message_generic (other, client_ic, client_oc) state)
 ;;
 

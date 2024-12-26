@@ -10,6 +10,11 @@ Start redis:
   redis_ocaml_server: [INFO] Received command EXEC
   redis_ocaml_server: [INFO] Received command (GET "foo")
   redis_ocaml_server: [INFO] Received command EXEC
+  redis_ocaml_server: [INFO] Received command MULTI
+  redis_ocaml_server: [INFO] Received command SET {set_key = "baz"; set_value = "50"; set_timeout = None}
+  redis_ocaml_server: [INFO] Received command DISCARD
+  redis_ocaml_server: [INFO] Received command (GET "baz")
+  redis_ocaml_server: [INFO] Received command DISCARD
 
 Cmd not executed without EXEC
   $ printf 'MULTI\nSET bar 5' | redis-cli
@@ -31,6 +36,18 @@ Start and queue commands in transaction:
 EXEC without starting transaction:
   $ redis-cli EXEC
   ERR EXEC without MULTI
+  
+Discard transaction
+  $ printf 'MULTI\nSET baz 50\nDISCARD' | redis-cli
+  OK
+  QUEUED
+  OK
+  $ redis-cli GET baz
+  
+
+Discard transaction without MULTI
+  $ printf 'DISCARD' | redis-cli
+  ERR DISCARD without MULTI
   
 
 Kill redis:

@@ -230,7 +230,12 @@ let parse_multi_cmd = function
 
 let parse_exec_cmd = function
   | [] -> Cmd.EXEC
-  | _ -> Cmd.INVALID "'MULTI' takes no args"
+  | _ -> Cmd.INVALID "'EXEC' takes no args"
+;;
+
+let parse_discard_cmd = function
+  | [] -> Cmd.DISCARD
+  | _ -> Cmd.INVALID "'DISCARD' takes no args"
 ;;
 
 let args_to_cmd args =
@@ -252,6 +257,7 @@ let args_to_cmd args =
   | "incr" :: args -> parse_incr_cmd args
   | "multi" :: args -> parse_multi_cmd args
   | "exec" :: args -> parse_exec_cmd args
+  | "discard" :: args -> parse_discard_cmd args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;

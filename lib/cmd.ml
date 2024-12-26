@@ -54,6 +54,7 @@ type t =
   | INCR of string
   | MULTI
   | EXEC
+  | DISCARD
   | MASTER_SET of
       { set_key : string
       ; set_value : string
@@ -70,6 +71,6 @@ let is_in_range a = function
 ;;
 
 let is_txn_cmd = function
-  | MULTI | EXEC -> true
+  | MULTI | EXEC | DISCARD -> true
   | _ -> false
 ;;
