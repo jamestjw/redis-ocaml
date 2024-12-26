@@ -30,10 +30,15 @@ Start redis:
   redis_ocaml_server: [INFO] Received command (XRANGE ("stream_key", (GTE (1526919030475, 0))))
   redis_ocaml_server: [INFO] Received command (XRANGE ("stream_key", (LTE (1526919030474, 9))))
   redis_ocaml_server: [INFO] Received command XREAD {block = None;
-    queries = [("stream_key", (1526919030476, 2)); ("stream_key_2", (0, 0))]}
-  redis_ocaml_server: [INFO] Received command XREAD {block = None; queries = [("unk_key", (0, 0))]}
-  redis_ocaml_server: [INFO] Received command XREAD {block = (Some 200); queries = [("async", (0, 0))]}
+    queries =
+    [("stream_key", (FRESHER_THAN (1526919030476, 2)));
+      ("stream_key_2", (FRESHER_THAN (0, 0)))]}
+  redis_ocaml_server: [INFO] Received command XREAD {block = None; queries = [("unk_key", (FRESHER_THAN (0, 0)))]}
+  redis_ocaml_server: [INFO] Received command XREAD {block = (Some 200); queries = [("async", (FRESHER_THAN (0, 0)))]}
   redis_ocaml_server: [INFO] Received command (XADD ("async", (EXPLICIT (0, 1)), [("added", "later")]))
+  redis_ocaml_server: [INFO] Received command (XADD ("dollar", (EXPLICIT (0, 1)), [("already", "here")]))
+  redis_ocaml_server: [INFO] Received command XREAD {block = (Some 200); queries = [("dollar", LAST)]}
+  redis_ocaml_server: [INFO] Received command (XADD ("dollar", (EXPLICIT (0, 2)), [("added", "later")]))
 
 XADD with valid entry id:
   $ redis-cli XADD stream_key 0-* temperature 24 humidity 75
@@ -163,6 +168,17 @@ XREAD with block:
   later
   $ redis-cli XADD async 0-1 added later
   0-1
+
+XREAD with block demanding new entries only ($):
+  $ redis-cli XADD dollar 0-1 already here
+  0-1
+  $ redis-cli XREAD block 200 streams dollar $ &
+  dollar
+  0-2
+  added
+  later
+  $ redis-cli XADD dollar 0-2 added later
+  0-2
 
 Kill redis:
   $ ./kill_redis.sh

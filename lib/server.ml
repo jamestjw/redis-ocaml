@@ -154,9 +154,15 @@ let handle_xread queries block ({ new_stream_entry_cond; _ } as state) oc =
   let query_map = StringMap.of_list queries in
   let rec listen_for_new () =
     let%lwt key, (id, kv_pairs) = Lwt_condition.wait new_stream_entry_cond in
+    let is_fresh_enough = function
+      | Cmd.FRESHER_THAN query_id -> Cmd.is_in_range id (Cmd.GT query_id)
+      | Cmd.LAST ->
+        (* Anything new is fresh enough *)
+        true
+    in
     match StringMap.find_opt key query_map with
     (* See if the key is in the map and if its ID is recent enough *)
-    | Some query_id when Cmd.is_in_range id (Cmd.GT query_id) ->
+    | Some freshness when is_fresh_enough freshness ->
       Lwt.return_some
         (Response.ARRAY
            [ Response.ARRAY
@@ -187,7 +193,14 @@ let handle_xread queries block ({ new_stream_entry_cond; _ } as state) oc =
   let res =
     List.map
       ~f:(fun (key, range) ->
-        get_stream_as_arr key (Cmd.GT range) state |> Result.map ~f:(fun res -> key, res))
+        let stream_arr =
+          match range with
+          | Cmd.FRESHER_THAN range -> get_stream_as_arr key (Cmd.GT range) state
+          | Cmd.LAST ->
+            (* If we get this param, then we refuse to return anything we already have *)
+            Ok []
+        in
+        Result.map stream_arr ~f:(fun res -> key, res))
       queries
     |> Result.all
     |> Result.map ~f:(List.filter ~f:(fun (_, vals) -> not @@ List.is_empty vals))

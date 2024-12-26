@@ -19,6 +19,11 @@ type 'a range =
   | ALL
 [@@deriving show { with_path = false }]
 
+type 'a freshness =
+  | FRESHER_THAN of 'a
+  | LAST
+[@@deriving show { with_path = false }]
+
 type t =
   | PING
   | MASTER_PING
@@ -44,7 +49,7 @@ type t =
   | XRANGE of string * (int * int) range
   | XREAD of
       { block : int option
-      ; queries : (string * (int * int)) list
+      ; queries : (string * (int * int) freshness) list
       }
   | MASTER_SET of
       { set_key : string

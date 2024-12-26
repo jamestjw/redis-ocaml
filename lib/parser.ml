@@ -185,10 +185,13 @@ let parse_xread_cmd args =
       if Str.string_match explicit_id_regex range 0
       then (
         let range =
-          ( Stdlib.int_of_string (Str.matched_group 1 range)
-          , Stdlib.int_of_string (Str.matched_group 2 range) )
+          Cmd.FRESHER_THAN
+            ( Stdlib.int_of_string (Str.matched_group 1 range)
+            , Stdlib.int_of_string (Str.matched_group 2 range) )
         in
         parse_ranges ranges (range :: acc))
+      else if String.equal range "$"
+      then parse_ranges ranges (Cmd.LAST :: acc)
       else Error "invalid range format"
   in
   let args_block =
