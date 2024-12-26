@@ -389,6 +389,19 @@ let handle_message_for_master
           , set state key (STREAM [ id, pairs ]) )
         | Error e -> Response.ERR e, state)
      | Some _ -> Response.ERR "type error", state)
+  | Cmd.INCR key ->
+    let new_value =
+      match get state key with
+      | Some (STR (s, exp)) ->
+        (match int_of_string_opt s with
+         | None -> Error "value is not an integer or out of range"
+         | Some i -> Ok (i + 1, exp))
+      | Some _ -> Error "value is not an integer or out of range"
+      | None -> Ok (1, None)
+    in
+    (match new_value with
+     | Ok (i, exp) -> Response.INTEGER i, set state key (STR (string_of_int i, exp))
+     | Error e -> Response.ERR e, state)
   | other -> handle_message_generic (other, client_ic, client_oc) state
 ;;
 

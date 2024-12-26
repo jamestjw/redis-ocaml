@@ -218,6 +218,11 @@ let parse_xread_cmd args =
   | _ -> Cmd.INVALID "invalid arguments for 'XREAD' command"
 ;;
 
+let parse_incr_cmd = function
+  | [ e ] -> Cmd.INCR e
+  | _ -> Cmd.INVALID "'INCR' takes one arg"
+;;
+
 let args_to_cmd args =
   match lower_fst args with
   | "ping" :: args -> parse_ping_cmd args
@@ -234,6 +239,7 @@ let args_to_cmd args =
   | "xadd" :: args -> parse_xadd_cmd args
   | "xrange" :: args -> parse_xrange_cmd args
   | "xread" :: args -> parse_xread_cmd args
+  | "incr" :: args -> parse_incr_cmd args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;
