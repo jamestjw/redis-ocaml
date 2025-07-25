@@ -24,6 +24,7 @@ type stream = stream_entry list
 type store_value =
   | STR of string * Int63.t option
   | STREAM of stream
+  | LIST of string list
 
 type t =
   { (* Storing the expiry in nanoseconds *)

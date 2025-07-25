@@ -60,6 +60,10 @@ type t =
       ; set_value : string
       ; set_timeout : set_timeout option
       }
+  | RPUSH of
+      { push_key : string
+      ; push_value : string
+      }
 [@@deriving show { with_path = false }]
 
 let is_in_range a = function

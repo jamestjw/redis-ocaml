@@ -250,6 +250,20 @@ let handle_xread queries block ({ new_stream_entry_cond; _ } as state) oc =
   | Error e -> Response.ERR e
 ;;
 
+let handle_rpush key value ({ store; _ } as state) =
+  let l =
+    match StringMap.find_opt key store with
+    | Some (LIST l) -> Some l
+    | None -> Some []
+    | _ -> None
+  in
+  match l with
+  | None -> Response.ERR "can only push to a list", state
+  | Some l ->
+    let store = StringMap.add key (LIST (value :: l)) store in
+    Response.INTEGER (List.length l + 1), { state with store }
+;;
+
 let handle_message_generic (cmd, _client_ic, client_oc) ({ replication; _ } as state) =
   match cmd with
   | Cmd.ECHO s -> Response.BULK s, state
@@ -283,6 +297,7 @@ let handle_message_generic (cmd, _client_ic, client_oc) ({ replication; _ } as s
       | None -> Response.SIMPLE "none"
       | Some (STR _) -> Response.SIMPLE "string"
       | Some (STREAM _) -> Response.SIMPLE "stream"
+      | Some (LIST _) -> Response.SIMPLE "list"
     in
     res, state
   | Cmd.INVALID s -> Response.ERR s, state
@@ -310,8 +325,8 @@ let handle_message_for_replica { cmd; num_bytes; ic; oc; _ } state =
 ;;
 
 let rec handle_message_for_master
-  { cmd; ic = client_ic; oc = client_oc; num_bytes; id }
-  ({ replication; new_stream_entry_cond; _ } as state)
+          { cmd; ic = client_ic; oc = client_oc; num_bytes; id }
+          ({ replication; new_stream_entry_cond; _ } as state)
   =
   if (not @@ Cmd.is_txn_cmd cmd) && has_active_transaction state id
   then Response.SIMPLE "QUEUED", queue_cmd state id (cmd, num_bytes)
@@ -461,6 +476,7 @@ let rec handle_message_for_master
       if has_active_transaction state id
       then Response.SIMPLE "OK", rm_transaction state id
       else Response.ERR "DISCARD without MULTI", state
+    | Cmd.RPUSH { push_key; push_value } -> handle_rpush push_key push_value state
     | other -> handle_message_generic (other, client_ic, client_oc) state)
 ;;
 
@@ -485,10 +501,12 @@ let maybe_ping_replicas ({ replication; _ } as st) =
     let%lwt replicas =
       Lwt_list.map_p
         (fun (id, replica) ->
-          try%lwt Client.send_ping_no_resp replica >|= fun () -> Some (id, replica) with
-          | _ ->
-            let%lwt () = Logs_lwt.debug (fun m -> m "Lost connection to replica %s" id) in
-            Lwt.return_none)
+           try%lwt Client.send_ping_no_resp replica >|= fun () -> Some (id, replica) with
+           | _ ->
+             let%lwt () =
+               Logs_lwt.debug (fun m -> m "Lost connection to replica %s" id)
+             in
+             Lwt.return_none)
         (StringMap.bindings replicas)
     in
     let st =

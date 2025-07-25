@@ -238,6 +238,11 @@ let parse_discard_cmd = function
   | _ -> Cmd.INVALID "'DISCARD' takes no args"
 ;;
 
+let parse_rpush = function
+  | [ push_key; push_value ] -> Cmd.RPUSH { push_key; push_value }
+  | _ -> Cmd.INVALID "'RPUSH' takes 2 args"
+;;
+
 let args_to_cmd args =
   match lower_fst args with
   | "ping" :: args -> parse_ping_cmd args
@@ -258,6 +263,7 @@ let args_to_cmd args =
   | "multi" :: args -> parse_multi_cmd args
   | "exec" :: args -> parse_exec_cmd args
   | "discard" :: args -> parse_discard_cmd args
+  | "rpush" :: args -> parse_rpush args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;
