@@ -282,6 +282,13 @@ let handle_lrange key start_idx end_idx { store; _ } =
   | _ -> Response.ERR "invalid list"
 ;;
 
+let handle_llen key { store; _ } =
+  match StringMap.find_opt key store with
+  | None -> Response.INTEGER 0
+  | Some (LIST l) -> Response.INTEGER (List.length l)
+  | _ -> Response.ERR "invalid list"
+;;
+
 let handle_message_generic (cmd, _client_ic, client_oc) ({ replication; _ } as state) =
   match cmd with
   | Cmd.ECHO s -> Response.BULK s, state
@@ -323,6 +330,7 @@ let handle_message_generic (cmd, _client_ic, client_oc) ({ replication; _ } as s
   | Cmd.XREAD { block; queries } -> handle_xread queries block state client_oc, state
   | Cmd.LRANGE { key; start_idx; end_idx } ->
     handle_lrange key start_idx end_idx state, state
+  | Cmd.LLEN key -> handle_llen key state, state
   | cmd ->
     Response.ERR (Printf.sprintf "%s command is not supported" @@ Cmd.show cmd), state
 ;;

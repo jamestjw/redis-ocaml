@@ -16,6 +16,8 @@ Start redis:
   redis_ocaml_server: [INFO] Received command PUSH {from_left = true; push_key = "list_key_left";
     push_values = ["a"; "b"; "c"]}
   redis_ocaml_server: [INFO] Received command LRANGE {key = "list_key_left"; start_idx = 0; end_idx = -1}
+  redis_ocaml_server: [INFO] Received command (LLEN "new_list")
+  redis_ocaml_server: [INFO] Received command (LLEN "list_key_left")
 
 Testing RPUSH create new list with one element:
   $ redis-cli rpush list_key "foo"
@@ -66,6 +68,14 @@ Testing LPUSH creating new list:
   c
   b
   a
+
+Testing LLEN on new list:
+  $ redis-cli llen new_list
+  0
+
+Testing LLEN on existing list:
+  $ redis-cli llen list_key_left
+  3
 
 Kill redis:
   $ ./kill_redis.sh

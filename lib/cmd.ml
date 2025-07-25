@@ -70,6 +70,7 @@ type t =
       ; start_idx : int
       ; end_idx : int
       }
+  | LLEN of string
 [@@deriving show { with_path = false }]
 
 let is_in_range a = function

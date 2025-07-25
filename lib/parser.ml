@@ -252,6 +252,11 @@ let parse_lrange = function
   | _ -> Cmd.INVALID "'LRANGE' takes 2 args"
 ;;
 
+let parse_llen = function
+  | [ i ] -> Cmd.LLEN i
+  | _ -> Cmd.INVALID "'LLEN' takes 1 integer arg"
+;;
+
 let args_to_cmd args =
   match lower_fst args with
   | "ping" :: args -> parse_ping_cmd args
@@ -275,6 +280,7 @@ let args_to_cmd args =
   | "lpush" :: args -> parse_push true args
   | "rpush" :: args -> parse_push false args
   | "lrange" :: args -> parse_lrange args
+  | "llen" :: args -> parse_llen args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;
