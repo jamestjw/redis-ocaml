@@ -1,15 +1,21 @@
 Start redis:
   $ flock /tmp/redis-test.lock ./run_redis.sh
   redis_ocaml_server: [INFO] RDB file (/tmp/redis-data/rdbfile) does not exist, starting with blank database
-  redis_ocaml_server: [INFO] Received command RPUSH {push_key = "list_key"; push_values = ["foo"]}
-  redis_ocaml_server: [INFO] Received command RPUSH {push_key = "list_key"; push_values = ["bar"]}
-  redis_ocaml_server: [INFO] Received command RPUSH {push_key = "other_list"; push_values = ["baz"; "bar"]}
-  redis_ocaml_server: [INFO] Received command RPUSH {push_key = "other_list"; push_values = ["foo"; "bar"; "baz"]}
-  redis_ocaml_server: [INFO] Received command RPUSH {push_key = "range_list"; push_values = ["a"; "b"; "c"; "d"; "e"]}
+  redis_ocaml_server: [INFO] Received command PUSH {from_left = false; push_key = "list_key"; push_values = ["foo"]}
+  redis_ocaml_server: [INFO] Received command PUSH {from_left = false; push_key = "list_key"; push_values = ["bar"]}
+  redis_ocaml_server: [INFO] Received command PUSH {from_left = false; push_key = "other_list";
+    push_values = ["baz"; "bar"]}
+  redis_ocaml_server: [INFO] Received command PUSH {from_left = false; push_key = "other_list";
+    push_values = ["foo"; "bar"; "baz"]}
+  redis_ocaml_server: [INFO] Received command PUSH {from_left = false; push_key = "range_list";
+    push_values = ["a"; "b"; "c"; "d"; "e"]}
   redis_ocaml_server: [INFO] Received command LRANGE {key = "range_list"; start_idx = 0; end_idx = 1}
   redis_ocaml_server: [INFO] Received command LRANGE {key = "range_list"; start_idx = 2; end_idx = 4}
   redis_ocaml_server: [INFO] Received command LRANGE {key = "range_list"; start_idx = -2; end_idx = -1}
   redis_ocaml_server: [INFO] Received command LRANGE {key = "range_list"; start_idx = 0; end_idx = -3}
+  redis_ocaml_server: [INFO] Received command PUSH {from_left = true; push_key = "list_key_left";
+    push_values = ["a"; "b"; "c"]}
+  redis_ocaml_server: [INFO] Received command LRANGE {key = "list_key_left"; start_idx = 0; end_idx = -1}
 
 Testing RPUSH create new list with one element:
   $ redis-cli rpush list_key "foo"
@@ -52,6 +58,14 @@ Test LRANGE to list all items except last 2
   a
   b
   c
+
+Testing LPUSH creating new list:
+  $ redis-cli lpush list_key_left "a" "b" "c"
+  3
+  $ redis-cli lrange list_key_left 0 -1
+  c
+  b
+  a
 
 Kill redis:
   $ ./kill_redis.sh

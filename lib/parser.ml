@@ -238,9 +238,9 @@ let parse_discard_cmd = function
   | _ -> Cmd.INVALID "'DISCARD' takes no args"
 ;;
 
-let parse_rpush = function
+let parse_push from_left = function
   | push_key :: push_values when List.length push_values > 0 ->
-    Cmd.RPUSH { push_key; push_values }
+    Cmd.PUSH { from_left; push_key; push_values }
   | _ -> Cmd.INVALID "'RPUSH' takes 2 args"
 ;;
 
@@ -272,7 +272,8 @@ let args_to_cmd args =
   | "multi" :: args -> parse_multi_cmd args
   | "exec" :: args -> parse_exec_cmd args
   | "discard" :: args -> parse_discard_cmd args
-  | "rpush" :: args -> parse_rpush args
+  | "lpush" :: args -> parse_push true args
+  | "rpush" :: args -> parse_push false args
   | "lrange" :: args -> parse_lrange args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"

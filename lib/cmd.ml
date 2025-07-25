@@ -60,8 +60,9 @@ type t =
       ; set_value : string
       ; set_timeout : set_timeout option
       }
-  | RPUSH of
-      { push_key : string
+  | PUSH of
+      { from_left : bool
+      ; push_key : string
       ; push_values : string list
       }
   | LRANGE of
