@@ -268,6 +268,10 @@ let handle_lrange key start_idx end_idx { store; _ } =
   match StringMap.find_opt key store with
   | None -> Response.ARRAY []
   | Some (LIST l) ->
+    let start_idx =
+      if start_idx < 0 then List.length l - (-1 * start_idx) else start_idx
+    in
+    let end_idx = if end_idx < 0 then List.length l - (-1 * end_idx) else end_idx in
     let number_elems = if start_idx > end_idx then 0 else end_idx - start_idx + 1 in
     let res =
       List.take (List.drop l start_idx) number_elems

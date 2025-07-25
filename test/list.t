@@ -8,6 +8,8 @@ Start redis:
   redis_ocaml_server: [INFO] Received command RPUSH {push_key = "range_list"; push_values = ["a"; "b"; "c"; "d"; "e"]}
   redis_ocaml_server: [INFO] Received command LRANGE {key = "range_list"; start_idx = 0; end_idx = 1}
   redis_ocaml_server: [INFO] Received command LRANGE {key = "range_list"; start_idx = 2; end_idx = 4}
+  redis_ocaml_server: [INFO] Received command LRANGE {key = "range_list"; start_idx = -2; end_idx = -1}
+  redis_ocaml_server: [INFO] Received command LRANGE {key = "range_list"; start_idx = 0; end_idx = -3}
 
 Testing RPUSH create new list with one element:
   $ redis-cli rpush list_key "foo"
@@ -39,6 +41,17 @@ Test LRANGE to list items from indexes 2-4
   c
   d
   e
+
+Test LRANGE to list last 2 items
+  $ redis-cli lrange range_list -2 -1
+  d
+  e
+
+Test LRANGE to list all items except last 2
+  $ redis-cli lrange range_list 0 -3
+  a
+  b
+  c
 
 Kill redis:
   $ ./kill_redis.sh
