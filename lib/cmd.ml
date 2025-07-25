@@ -64,6 +64,11 @@ type t =
       { push_key : string
       ; push_values : string list
       }
+  | LRANGE of
+      { key : string
+      ; start_idx : int
+      ; end_idx : int
+      }
 [@@deriving show { with_path = false }]
 
 let is_in_range a = function

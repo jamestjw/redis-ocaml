@@ -244,6 +244,14 @@ let parse_rpush = function
   | _ -> Cmd.INVALID "'RPUSH' takes 2 args"
 ;;
 
+let parse_lrange = function
+  | [ key; start_idx; end_idx ] ->
+    (match int_of_string_opt start_idx, int_of_string_opt end_idx with
+     | Some start_idx, Some end_idx -> Cmd.LRANGE { key; start_idx; end_idx }
+     | _, _ -> Cmd.INVALID "'LRANGE' requires 2 integer arguments")
+  | _ -> Cmd.INVALID "'LRANGE' takes 2 args"
+;;
+
 let args_to_cmd args =
   match lower_fst args with
   | "ping" :: args -> parse_ping_cmd args
@@ -265,6 +273,7 @@ let args_to_cmd args =
   | "exec" :: args -> parse_exec_cmd args
   | "discard" :: args -> parse_discard_cmd args
   | "rpush" :: args -> parse_rpush args
+  | "lrange" :: args -> parse_lrange args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;

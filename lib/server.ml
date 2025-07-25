@@ -264,6 +264,19 @@ let handle_rpush key values ({ store; _ } as state) =
     Response.INTEGER (List.length l + List.length values), { state with store }
 ;;
 
+let handle_lrange key start_idx end_idx { store; _ } =
+  match StringMap.find_opt key store with
+  | None -> Response.ARRAY []
+  | Some (LIST l) ->
+    let number_elems = if start_idx > end_idx then 0 else end_idx - start_idx + 1 in
+    let res =
+      List.take (List.drop l start_idx) number_elems
+      |> List.map ~f:(fun e -> Response.SIMPLE e)
+    in
+    Response.ARRAY res
+  | _ -> Response.ERR "invalid list"
+;;
+
 let handle_message_generic (cmd, _client_ic, client_oc) ({ replication; _ } as state) =
   match cmd with
   | Cmd.ECHO s -> Response.BULK s, state
@@ -303,6 +316,8 @@ let handle_message_generic (cmd, _client_ic, client_oc) ({ replication; _ } as s
   | Cmd.INVALID s -> Response.ERR s, state
   | Cmd.XRANGE (key, range) -> handle_xrange key range state, state
   | Cmd.XREAD { block; queries } -> handle_xread queries block state client_oc, state
+  | Cmd.LRANGE { key; start_idx; end_idx } ->
+    handle_lrange key start_idx end_idx state, state
   | cmd ->
     Response.ERR (Printf.sprintf "%s command is not supported" @@ Cmd.show cmd), state
 ;;
