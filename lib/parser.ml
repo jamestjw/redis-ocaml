@@ -239,7 +239,8 @@ let parse_discard_cmd = function
 ;;
 
 let parse_rpush = function
-  | [ push_key; push_value ] -> Cmd.RPUSH { push_key; push_value }
+  | push_key :: push_values when List.length push_values > 0 ->
+    Cmd.RPUSH { push_key; push_values }
   | _ -> Cmd.INVALID "'RPUSH' takes 2 args"
 ;;
 

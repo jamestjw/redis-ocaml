@@ -62,7 +62,7 @@ type t =
       }
   | RPUSH of
       { push_key : string
-      ; push_value : string
+      ; push_values : string list
       }
 [@@deriving show { with_path = false }]
 

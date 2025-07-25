@@ -250,7 +250,7 @@ let handle_xread queries block ({ new_stream_entry_cond; _ } as state) oc =
   | Error e -> Response.ERR e
 ;;
 
-let handle_rpush key value ({ store; _ } as state) =
+let handle_rpush key values ({ store; _ } as state) =
   let l =
     match StringMap.find_opt key store with
     | Some (LIST l) -> Some l
@@ -260,8 +260,8 @@ let handle_rpush key value ({ store; _ } as state) =
   match l with
   | None -> Response.ERR "can only push to a list", state
   | Some l ->
-    let store = StringMap.add key (LIST (value :: l)) store in
-    Response.INTEGER (List.length l + 1), { state with store }
+    let store = StringMap.add key (LIST (List.append l values)) store in
+    Response.INTEGER (List.length l + List.length values), { state with store }
 ;;
 
 let handle_message_generic (cmd, _client_ic, client_oc) ({ replication; _ } as state) =
@@ -476,7 +476,7 @@ let rec handle_message_for_master
       if has_active_transaction state id
       then Response.SIMPLE "OK", rm_transaction state id
       else Response.ERR "DISCARD without MULTI", state
-    | Cmd.RPUSH { push_key; push_value } -> handle_rpush push_key push_value state
+    | Cmd.RPUSH { push_key; push_values } -> handle_rpush push_key push_values state
     | other -> handle_message_generic (other, client_ic, client_oc) state)
 ;;
 
