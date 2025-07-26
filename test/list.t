@@ -28,7 +28,7 @@ Start redis:
   redis_ocaml_server: [INFO] Received command PUSH {from_left = false; push_key = "blpop_list";
     push_values = ["a"; "b"; "c"]}
   redis_ocaml_server: [INFO] Received command LRANGE {key = "blpop_list"; start_idx = 0; end_idx = -1}
-  redis_ocaml_server: [INFO] Received command BLPOP {pop_key = "blpop_list_2"; pop_timeout = (Some 1)}
+  redis_ocaml_server: [INFO] Received command BLPOP {pop_key = "blpop_list_2"; pop_timeout = (Some 1.)}
 
 Testing RPUSH create new list with one element:
   $ redis-cli rpush list_key "foo"

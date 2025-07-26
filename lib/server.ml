@@ -296,7 +296,7 @@ let handle_lpop key count ({ store; _ } as state) =
 
 let handle_blpop key timeout state oc =
   let send resp oc = Lwt.async (fun () -> Lwt_io.write oc (Response.serialize resp)) in
-  let timeout_ms = Option.map timeout ~f:(fun t -> Utils.Time.int_s_to_ns t) in
+  let timeout_ms = Option.map timeout ~f:(fun t -> Utils.Time.float_s_to_ns t) in
   let callback ({ store; _ } as state) =
     match StringMap.find_opt key store with
     | Some (LIST (e :: rest)) ->

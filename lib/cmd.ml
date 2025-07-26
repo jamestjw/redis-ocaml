@@ -77,7 +77,7 @@ type t =
       }
   | BLPOP of
       { pop_key : string
-      ; pop_timeout : int option
+      ; pop_timeout : float option
       }
 [@@deriving show { with_path = false }]
 

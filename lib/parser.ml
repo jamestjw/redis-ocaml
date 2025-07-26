@@ -270,11 +270,11 @@ let parse_lpop = function
 
 let parse_blpop = function
   | [ pop_key; pop_timeout ] ->
-    (match int_of_string_opt pop_timeout with
-     | None -> Cmd.INVALID "'BLPOP' count has to be an integer"
-     | Some pop_count when pop_count < 0 ->
+    (match float_of_string_opt pop_timeout with
+     | None -> Cmd.INVALID "'BLPOP' count has to be an number"
+     | Some pop_count when Float.(pop_count < 0.) ->
        Cmd.INVALID "'BLPOP' count must not be negative"
-     | Some 0 -> Cmd.BLPOP { pop_key; pop_timeout = None }
+     | Some 0. -> Cmd.BLPOP { pop_key; pop_timeout = None }
      | Some pop_timeout -> Cmd.BLPOP { pop_key; pop_timeout = Some pop_timeout })
   | _ -> Cmd.INVALID "'BLPOP' takes 1 key and 1 timeout arg"
 ;;
