@@ -282,6 +282,18 @@ let handle_lrange key start_idx end_idx { store; _ } =
   | _ -> Response.ERR "invalid list"
 ;;
 
+let handle_lpop key count ({ store; _ } as state) =
+  match StringMap.find_opt key store, count with
+  | None, _ | Some (LIST []), _ -> Response.NULL_BULK, state
+  | Some (LIST (e :: rest)), None ->
+    Response.SIMPLE e, { state with store = StringMap.add key (LIST rest) store }
+  | Some (LIST l), Some count ->
+    let popped, rest = List.split_n l count in
+    ( Response.ARRAY (List.map popped ~f:(fun e -> Response.SIMPLE e))
+    , { state with store = StringMap.add key (LIST rest) store } )
+  | _ -> Response.ERR "cannot pop from a value that is not a list", state
+;;
+
 let handle_llen key { store; _ } =
   match StringMap.find_opt key store with
   | None -> Response.INTEGER 0
@@ -506,6 +518,7 @@ let rec handle_message_for_master
       else Response.ERR "DISCARD without MULTI", state
     | Cmd.PUSH { from_left; push_key; push_values } ->
       handle_push from_left push_key push_values state
+    | Cmd.LPOP { pop_key; pop_count } -> handle_lpop pop_key pop_count state
     | other -> handle_message_generic (other, client_ic, client_oc) state)
 ;;
 

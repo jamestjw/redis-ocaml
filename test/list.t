@@ -18,6 +18,12 @@ Start redis:
   redis_ocaml_server: [INFO] Received command LRANGE {key = "list_key_left"; start_idx = 0; end_idx = -1}
   redis_ocaml_server: [INFO] Received command (LLEN "new_list")
   redis_ocaml_server: [INFO] Received command (LLEN "list_key_left")
+  redis_ocaml_server: [INFO] Received command PUSH {from_left = false; push_key = "pop_list";
+    push_values = ["a"; "b"; "c"; "d"]}
+  redis_ocaml_server: [INFO] Received command LPOP {pop_key = "pop_list"; pop_count = None}
+  redis_ocaml_server: [INFO] Received command LRANGE {key = "pop_list"; start_idx = 0; end_idx = -1}
+  redis_ocaml_server: [INFO] Received command LPOP {pop_key = "pop_list"; pop_count = (Some 2)}
+  redis_ocaml_server: [INFO] Received command LRANGE {key = "pop_list"; start_idx = 0; end_idx = -1}
 
 Testing RPUSH create new list with one element:
   $ redis-cli rpush list_key "foo"
@@ -76,6 +82,26 @@ Testing LLEN on new list:
 Testing LLEN on existing list:
   $ redis-cli llen list_key_left
   3
+
+Setting up list to LPOP:
+  $ redis-cli rpush pop_list "a" "b" "c" "d"
+  4
+
+Testing LPOP with no argument:
+  $ redis-cli lpop pop_list
+  a
+  $ redis-cli lrange pop_list 0 -1
+  b
+  c
+  d
+
+Testing LPOP with integer argument:
+  $ redis-cli lpop pop_list 2
+  b
+  c
+  $ redis-cli lrange pop_list 0 -1
+  d
+
 
 Kill redis:
   $ ./kill_redis.sh

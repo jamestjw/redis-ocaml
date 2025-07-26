@@ -257,6 +257,17 @@ let parse_llen = function
   | _ -> Cmd.INVALID "'LLEN' takes 1 integer arg"
 ;;
 
+let parse_lpop = function
+  | [ pop_key ] -> Cmd.LPOP { pop_key; pop_count = None }
+  | [ pop_key; pop_count ] ->
+    (match int_of_string_opt pop_count with
+     | None -> Cmd.INVALID "'LPOP' count has to be an integer"
+     | Some pop_count when pop_count < 0 ->
+       Cmd.INVALID "'LPOP' count must not be negative"
+     | Some pop_count -> Cmd.LPOP { pop_key; pop_count = Some pop_count })
+  | _ -> Cmd.INVALID "'LPOP' takes 1 key and 1 optional length arg"
+;;
+
 let args_to_cmd args =
   match lower_fst args with
   | "ping" :: args -> parse_ping_cmd args
@@ -281,6 +292,7 @@ let args_to_cmd args =
   | "rpush" :: args -> parse_push false args
   | "lrange" :: args -> parse_lrange args
   | "llen" :: args -> parse_llen args
+  | "lpop" :: args -> parse_lpop args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;

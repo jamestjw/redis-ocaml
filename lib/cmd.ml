@@ -71,6 +71,10 @@ type t =
       ; end_idx : int
       }
   | LLEN of string
+  | LPOP of
+      { pop_key : string
+      ; pop_count : int option
+      }
 [@@deriving show { with_path = false }]
 
 let is_in_range a = function
