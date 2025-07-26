@@ -26,13 +26,25 @@ type store_value =
   | STREAM of stream
   | LIST of string list
 
-type t =
+type time_event =
+  { timeout : Int63.t option
+  ; queued_at : Int63.t
+  ; callback : t -> t * time_event_result
+  ; timed_out_callback : unit -> unit
+  }
+
+and time_event_result =
+  | DONE
+  | RETRY
+
+and t =
   { (* Storing the expiry in nanoseconds *)
     store : store_value StringMap.t
   ; configs : string StringMap.t
   ; replication : replication
   ; new_stream_entry_cond : (string * stream_entry) Lwt_condition.t
   ; active_transactions : (Cmd.t * int) list StringMap.t
+  ; time_events : time_event list
   }
 
 (* Either pass bytes or file dir and name *)
@@ -117,6 +129,7 @@ let mk_state ~rdb_source ~replication =
   ; replication
   ; new_stream_entry_cond = Lwt_condition.create ()
   ; active_transactions = StringMap.empty
+  ; time_events = []
   }
 ;;
 

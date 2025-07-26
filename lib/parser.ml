@@ -268,6 +268,17 @@ let parse_lpop = function
   | _ -> Cmd.INVALID "'LPOP' takes 1 key and 1 optional length arg"
 ;;
 
+let parse_blpop = function
+  | [ pop_key; pop_timeout ] ->
+    (match int_of_string_opt pop_timeout with
+     | None -> Cmd.INVALID "'BLPOP' count has to be an integer"
+     | Some pop_count when pop_count < 0 ->
+       Cmd.INVALID "'BLPOP' count must not be negative"
+     | Some 0 -> Cmd.BLPOP { pop_key; pop_timeout = None }
+     | Some pop_timeout -> Cmd.BLPOP { pop_key; pop_timeout = Some pop_timeout })
+  | _ -> Cmd.INVALID "'BLPOP' takes 1 key and 1 timeout arg"
+;;
+
 let args_to_cmd args =
   match lower_fst args with
   | "ping" :: args -> parse_ping_cmd args
@@ -293,6 +304,7 @@ let args_to_cmd args =
   | "lrange" :: args -> parse_lrange args
   | "llen" :: args -> parse_llen args
   | "lpop" :: args -> parse_lpop args
+  | "blpop" :: args -> parse_blpop args
   | cmd :: _ -> Cmd.INVALID (Printf.sprintf "unrecognised command %s" cmd)
   | _ -> Cmd.INVALID "invalid command"
 ;;

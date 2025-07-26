@@ -24,6 +24,11 @@ Start redis:
   redis_ocaml_server: [INFO] Received command LRANGE {key = "pop_list"; start_idx = 0; end_idx = -1}
   redis_ocaml_server: [INFO] Received command LPOP {pop_key = "pop_list"; pop_count = (Some 2)}
   redis_ocaml_server: [INFO] Received command LRANGE {key = "pop_list"; start_idx = 0; end_idx = -1}
+  redis_ocaml_server: [INFO] Received command BLPOP {pop_key = "blpop_list"; pop_timeout = None}
+  redis_ocaml_server: [INFO] Received command PUSH {from_left = false; push_key = "blpop_list";
+    push_values = ["a"; "b"; "c"]}
+  redis_ocaml_server: [INFO] Received command LRANGE {key = "blpop_list"; start_idx = 0; end_idx = -1}
+  redis_ocaml_server: [INFO] Received command BLPOP {pop_key = "blpop_list_2"; pop_timeout = (Some 1)}
 
 Testing RPUSH create new list with one element:
   $ redis-cli rpush list_key "foo"
@@ -102,6 +107,19 @@ Testing LPOP with integer argument:
   $ redis-cli lrange pop_list 0 -1
   d
 
+Testing BLPOP with no timeout:
+  $ redis-cli blpop blpop_list 0 &
+  blpop_list
+  a
+  $ redis-cli rpush blpop_list "a" "b" "c"
+  3
+  $ redis-cli lrange blpop_list 0 -1
+  b
+  c
+
+Testing BLPOP with timeout:
+  $ redis-cli blpop blpop_list_2 1
+  
 
 Kill redis:
   $ ./kill_redis.sh

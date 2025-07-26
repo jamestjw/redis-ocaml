@@ -294,6 +294,33 @@ let handle_lpop key count ({ store; _ } as state) =
   | _ -> Response.ERR "cannot pop from a value that is not a list", state
 ;;
 
+let handle_blpop key timeout state oc =
+  let send resp oc = Lwt.async (fun () -> Lwt_io.write oc (Response.serialize resp)) in
+  let timeout_ms = Option.map timeout ~f:(fun t -> Utils.Time.int_s_to_ns t) in
+  let callback ({ store; _ } as state) =
+    match StringMap.find_opt key store with
+    | Some (LIST (e :: rest)) ->
+      let resp = Response.ARRAY [ Response.SIMPLE key; Response.SIMPLE e ] in
+      let state = { state with store = StringMap.add key (LIST rest) store } in
+      send resp oc;
+      state, DONE
+    | None | Some (LIST []) -> state, RETRY
+    | _ ->
+      send (Response.ERR "cannot pop from a value that is not a list") oc;
+      state, DONE
+  in
+  let timed_out_callback () = send Response.NULL_BULK oc in
+  let time_event =
+    { queued_at = Time_now.nanoseconds_since_unix_epoch ()
+    ; timeout = timeout_ms
+    ; callback
+    ; timed_out_callback
+    }
+  in
+  (* Try again later *)
+  Response.QUIET, { state with time_events = time_event :: state.time_events }
+;;
+
 let handle_llen key { store; _ } =
   match StringMap.find_opt key store with
   | None -> Response.INTEGER 0
@@ -519,6 +546,8 @@ let rec handle_message_for_master
     | Cmd.PUSH { from_left; push_key; push_values } ->
       handle_push from_left push_key push_values state
     | Cmd.LPOP { pop_key; pop_count } -> handle_lpop pop_key pop_count state
+    | Cmd.BLPOP { pop_key; pop_timeout } ->
+      handle_blpop pop_key pop_timeout state client_oc
     | other -> handle_message_generic (other, client_ic, client_oc) state)
 ;;
 
@@ -567,6 +596,35 @@ let maybe_ping_replicas ({ replication; _ } as st) =
   | REPLICA _ -> Utils.forever () >|= fun () -> PING_REPLICA st
 ;;
 
+let handle_time_events state =
+  let has_timed_out { queued_at; timeout; _ } =
+    match timeout with
+    | None -> false
+    | Some timeout ->
+      Int63.(Time_now.nanoseconds_since_unix_epoch () >= queued_at + timeout)
+  in
+  let rec handle_events time_events state remaining_states =
+    match time_events with
+    | [] -> { state with time_events = List.rev remaining_states }
+    | ({ timed_out_callback; callback; _ } as event) :: events ->
+      if has_timed_out event
+      then (
+        timed_out_callback ();
+        handle_events events state remaining_states)
+      else (
+        let state, res = callback state in
+        match res with
+        | DONE -> handle_events events state remaining_states
+        | RETRY -> handle_events events state (event :: remaining_states))
+  in
+  (* Run events in FIFO order *)
+  let sorted_events =
+    List.sort state.time_events ~compare:(fun e1 e2 ->
+      Int63.compare e1.queued_at e2.queued_at)
+  in
+  handle_events sorted_events state []
+;;
+
 let run { request_mailbox; disconnection_mailbox } ~rdb_source ~replication =
   let take_disconnection mailbox =
     let open Lwt in
@@ -591,13 +649,26 @@ let run { request_mailbox; disconnection_mailbox } ~rdb_source ~replication =
       state
   in
   let rec inner state =
-    let%lwt tasks =
-      Lwt.npick
-        [ take_disconnection disconnection_mailbox (* ; maybe_ping_replicas state *)
-        ; take_req request_mailbox
-        ]
+    let state = handle_time_events state in
+    (* Try waiting for new responses, if we get nothing in 0.1 seconds then we go back to 
+   check on the timed events *)
+    let%lwt state =
+      Lwt.catch
+        (fun () ->
+           Lwt_unix.with_timeout 0.1 (fun () ->
+             let%lwt tasks =
+               Lwt.npick
+                 [ take_disconnection
+                     disconnection_mailbox (* ; maybe_ping_replicas state *)
+                 ; take_req request_mailbox
+                 ]
+             in
+             let state = List.fold ~init:state ~f:do_task tasks in
+             Lwt.return state))
+        (function
+          | Lwt_unix.Timeout -> Lwt.return state
+          | exn -> Lwt.fail exn)
     in
-    let state = List.fold ~init:state ~f:do_task tasks in
     inner state
   in
   let state = mk_state ~rdb_source ~replication in
